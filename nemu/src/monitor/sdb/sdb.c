@@ -15,6 +15,7 @@
 
 #include <isa.h>
 #include <cpu/cpu.h>
+#include <memory/vaddr.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "sdb.h"
@@ -47,9 +48,152 @@ static int cmd_c(char *args) {
   return 0;
 }
 
+static int cmd_si(char *args) {
+  int n = 1;
+  if (args != NULL) {
+    sscanf(args, "%d", &n);
+  }
+  cpu_exec(n);
+  return 0;
+}
+
+static int cmd_info(char *args) {
+  if (args == NULL) {
+    printf("Usage: info [r|w]\n");
+    return 0;
+  }
+  switch (args[0]) {
+    case 'r': isa_reg_display(); break;
+    case 'w': wp_display(); break;
+    default: printf("Unknown subcommand '%c'\n", args[0]);
+  }
+  return 0;
+}
 
 static int cmd_q(char *args) {
   return -1;
+}
+
+static int cmd_x(char *args) {
+  int n;
+  vaddr_t addr;
+  if (args == NULL) {
+    printf("Usage: x N EXPR\n");
+    return 0;
+  }
+  char *n_str = strtok(args, " ");
+  char *addr_expr = NULL;
+  if (n_str != NULL) {
+    addr_expr = n_str + strlen(n_str) + 1;
+    while (*addr_expr == ' ') addr_expr ++;
+    if (*addr_expr == '\0') addr_expr = NULL;
+  }
+
+  if (n_str == NULL || addr_expr == NULL || sscanf(n_str, "%d", &n) != 1) {
+    printf("Usage: x N EXPR\n");
+    return 0;
+  }
+
+  bool success = false;
+  addr = (vaddr_t)expr(addr_expr, &success);
+  if (!success) {
+    printf("Invalid expression\n");
+    return 0;
+  }
+
+  for (int i = 0; i < n; i ++) {
+    printf(FMT_WORD ": " FMT_WORD "\n",
+        (word_t)(addr + i * sizeof(word_t)),
+        vaddr_read(addr + i * sizeof(word_t), sizeof(word_t)));
+  }
+  return 0;
+}
+
+static int cmd_p(char *args) {
+  if (args == NULL) {
+    printf("Usage: p EXPR\n");
+    return 0;
+  }
+  bool success = false;
+  word_t result = expr(args, &success);
+  if (success) {
+    printf(FMT_WORD "\n", result);
+  }
+  else {
+    printf("Invalid expression\n");
+  }
+  return 0;
+}
+
+static int cmd_w(char *args) {
+  if (args == NULL) {
+    printf("Usage: w EXPR\n");
+    return 0;
+  }
+  wp_add(args);
+  return 0;
+}
+
+static int cmd_d(char *args) {
+  if (args == NULL) {
+    printf("Usage: d N\n");
+    return 0;
+  }
+  int no = -1;
+  if (sscanf(args, "%d", &no) != 1) {
+    printf("Usage: d N\n");
+    return 0;
+  }
+  wp_delete(no);
+  return 0;
+}
+
+static int cmd_test_expr(char *args) {
+  const char *file_path = (args == NULL) ? "tools/gen-expr/input" : args;
+  FILE *fp = fopen(file_path, "r");
+  if (fp == NULL) {
+    printf("Can not open %s\n", file_path);
+    return 0;
+  }
+
+  int total = 0, pass = 0;
+  char *line = NULL;
+  size_t cap = 0;
+  while (getline(&line, &cap, fp) != -1) {
+    char *saveptr = NULL;
+    char *expected_str = strtok_r(line, " \t\n", &saveptr);
+    char *e = saveptr;
+
+    if (expected_str == NULL || e == NULL) {
+      continue;
+    }
+
+    while (*e == ' ' || *e == '\t') e ++;
+    char *end = e + strlen(e) - 1;
+    while (end >= e && (*end == '\n' || *end == '\r' || *end == ' ' || *end == '\t')) {
+      *end = '\0';
+      end --;
+    }
+    if (*e == '\0') continue;
+
+    unsigned expected = (unsigned)strtoul(expected_str, NULL, 10);
+
+    bool success = false;
+    word_t got = expr(e, &success);
+    total ++;
+
+    if (success && (unsigned)got == expected) {
+      pass ++;
+    } else {
+      printf("[FAIL] expr: %s\n", e);
+      printf("       expect=%u got=%u success=%d\n", expected, (unsigned)got, success ? 1 : 0);
+    }
+  }
+  free(line);
+  fclose(fp);
+
+  printf("expr test done: %d/%d passed\n", pass, total);
+  return 0;
 }
 
 static int cmd_help(char *args);
@@ -64,7 +208,13 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
 
   /* TODO: Add more commands */
-
+  {"si","Step through the program n instructions (default 1 instruction)", cmd_si},
+  {"info","Print the status", cmd_info},
+  {"p","Evaluate the expression EXPR and print the result", cmd_p},
+  {"x","Scan the memory", cmd_x},
+  {"w","Set a watchpoint", cmd_w},
+  {"d","Delete a watchpoint by number", cmd_d},
+  {"testexpr","Test expr() with generated input file", cmd_test_expr},
 };
 
 #define NR_CMD ARRLEN(cmd_table)

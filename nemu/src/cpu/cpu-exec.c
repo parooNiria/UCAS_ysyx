@@ -18,6 +18,14 @@
 #include <cpu/difftest.h>
 #include <locale.h>
 
+#ifndef ITRACE_COND
+#define ITRACE_COND true
+#endif
+
+#ifdef CONFIG_WATCHPOINT
+extern bool wp_check_update();
+#endif
+
 /* The assembly code of instructions executed is only output to the screen
  * when the number of instructions executed is less than this value.
  * This is useful when you use the `si' command.
@@ -77,6 +85,14 @@ static void execute(uint64_t n) {
     exec_once(&s, cpu.pc);
     g_nr_guest_inst ++;
     trace_and_difftest(&s, cpu.pc);
+
+#ifdef CONFIG_WATCHPOINT
+    if (wp_check_update()) {
+      nemu_state.state = NEMU_STOP;
+      break;
+    }
+#endif
+
     if (nemu_state.state != NEMU_RUNNING) break;
     IFDEF(CONFIG_DEVICE, device_update());
   }

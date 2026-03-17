@@ -19,6 +19,8 @@
 #include <time.h>
 #include <assert.h>
 #include <string.h>
+#include <stdarg.h>
+#include <stdbool.h>
 
 // this should be enough
 static char buf[65536] = {};
@@ -31,8 +33,75 @@ static char *code_format =
 "  return 0; "
 "}";
 
+static size_t buf_p = 0;
+
+static int choose(int n) {
+  return rand() % n;
+}
+
+static void append_to_buf(const char *fmt, ...) {
+  if (buf_p >= sizeof(buf) - 1) return;
+
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(buf + buf_p, sizeof(buf) - buf_p, fmt, ap);
+  va_end(ap);
+
+  if (n < 0) return;
+  if ((size_t)n >= sizeof(buf) - buf_p) {
+    buf_p = sizeof(buf) - 1;
+    buf[buf_p] = '\0';
+  } else {
+    buf_p += (size_t)n;
+  }
+}
+
+static void gen_num(bool non_zero) {
+  uint32_t v = non_zero ? (uint32_t)(choose(100) + 1) : (uint32_t)choose(100);
+  if (choose(100) < 50) {
+    append_to_buf("%u", v);
+  } else {
+    append_to_buf("0x%x", v);
+  }
+}
+
+static void gen_rand_expr_rec(int depth) {
+  const int MAX_DEPTH = 4;
+
+  if (depth >= MAX_DEPTH || choose(100) < 35) {
+    gen_num(false);
+    return;
+  }
+
+  int t = choose(2);
+  if (t == 0) {
+    append_to_buf("(");
+    gen_rand_expr_rec(depth + 1);
+    append_to_buf(")");
+    return;
+  }
+
+  gen_rand_expr_rec(depth + 1);
+  int op = choose(7);
+  if (op == 0) append_to_buf(" + ");
+  else if (op == 1) append_to_buf(" - ");
+  else if (op == 2) append_to_buf(" * ");
+  else if (op == 3) append_to_buf(" / ");
+  else if (op == 4) append_to_buf(" == ");
+  else if (op == 5) append_to_buf(" != ");
+  else append_to_buf(" && ");
+
+  if (op == 3) {
+    gen_num(true);  // avoid division by zero
+  } else {
+    gen_rand_expr_rec(depth + 1);
+  }
+}
+
 static void gen_rand_expr() {
+  buf_p = 0;
   buf[0] = '\0';
+  gen_rand_expr_rec(0);
 }
 
 int main(int argc, char *argv[]) {
@@ -59,9 +128,11 @@ int main(int argc, char *argv[]) {
     fp = popen("/tmp/.expr", "r");
     assert(fp != NULL);
 
-    int result;
-    ret = fscanf(fp, "%d", &result);
+    unsigned result;
+    ret = fscanf(fp, "%u", &result);
     pclose(fp);
+
+    if (ret != 1) continue;
 
     printf("%u %s\n", result, buf);
   }
