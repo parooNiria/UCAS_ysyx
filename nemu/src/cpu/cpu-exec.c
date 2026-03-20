@@ -38,6 +38,32 @@ uint64_t g_nr_guest_inst = 0;
 static uint64_t g_timer = 0; // unit: us
 static bool g_print_step = false;
 
+#ifdef CONFIG_ITRACE
+#define ITRACE_RINGBUF_SIZE 16
+static char itrace_ringbuf[ITRACE_RINGBUF_SIZE][128] = {};
+static int itrace_rb_head = 0;   // next write position
+static int itrace_rb_count = 0;  // valid entry count
+static int itrace_rb_last = -1;  // last executed instruction
+
+static void itrace_ringbuf_push(const char *log) {
+  snprintf(itrace_ringbuf[itrace_rb_head], sizeof(itrace_ringbuf[itrace_rb_head]), "%s", log);
+  itrace_rb_last = itrace_rb_head;
+  itrace_rb_head = (itrace_rb_head + 1) % ITRACE_RINGBUF_SIZE;
+  if (itrace_rb_count < ITRACE_RINGBUF_SIZE) itrace_rb_count++;
+}
+
+static void itrace_ringbuf_print(void) {
+  if (itrace_rb_count <= 0) return;
+
+  _Log("------ instruction ring buffer (recent %d) ------\n", itrace_rb_count);
+  int start = (itrace_rb_head - itrace_rb_count + ITRACE_RINGBUF_SIZE) % ITRACE_RINGBUF_SIZE;
+  for (int i = 0; i < itrace_rb_count; i++) {
+    int idx = (start + i) % ITRACE_RINGBUF_SIZE;
+    _Log("%s %s\n", (idx == itrace_rb_last ? "-->" : "   "), itrace_ringbuf[idx]);
+  }
+}
+#endif
+
 void device_update();
 
 static void trace_and_difftest(Decode *_this, vaddr_t dnpc) {
@@ -76,6 +102,8 @@ static void exec_once(Decode *s, vaddr_t pc) {
   void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
   disassemble(p, s->logbuf + sizeof(s->logbuf) - p,
       MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc), (uint8_t *)&s->isa.inst, ilen);
+
+  itrace_ringbuf_push(s->logbuf);
 #endif
 }
 
@@ -109,6 +137,7 @@ static void statistic() {
 
 void assert_fail_msg() {
   isa_reg_display();
+  IFDEF(CONFIG_ITRACE, itrace_ringbuf_print());
   statistic();
 }
 
@@ -133,6 +162,9 @@ void cpu_exec(uint64_t n) {
     case NEMU_RUNNING: nemu_state.state = NEMU_STOP; break;
 
     case NEMU_END: case NEMU_ABORT:
+      if (nemu_state.state == NEMU_ABORT || nemu_state.halt_ret != 0) {
+        IFDEF(CONFIG_ITRACE, itrace_ringbuf_print());
+      }
       Log("nemu: %s at pc = " FMT_WORD,
           (nemu_state.state == NEMU_ABORT ? ANSI_FMT("ABORT", ANSI_FG_RED) :
            (nemu_state.halt_ret == 0 ? ANSI_FMT("HIT GOOD TRAP", ANSI_FG_GREEN) :
