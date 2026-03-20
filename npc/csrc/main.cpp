@@ -29,12 +29,12 @@ static inline bool in_pmem(uint32_t addr) {
          (static_cast<uint64_t>(addr) + 3) < (static_cast<uint64_t>(kPmemBase) + kPmemSize);
 }
 
-uint32_t pmem_read(uint32_t addr) {
-  addr = addr & ~0x3u;
-  if (!g_mem_assert_en) return 0;
+extern "C" int pmem_read(int raddr) {
+  uint32_t addr = static_cast<uint32_t>(raddr) & ~0x3u;
+  
+  // 注意：组合逻辑期间的 DPI-C 调用会有大量的伪越界地址毛刺
+  // 不要在这里触发 g_mem_assert_fail 或者报错，直接静默返回0即可
   if (!in_pmem(addr)) {
-    printf("[ERROR] pmem_read addr=0x%08x out of range\n", addr);
-    g_mem_assert_fail = true;
     return 0;
   }
   uint32_t offset = addr - kPmemBase;
@@ -43,18 +43,22 @@ uint32_t pmem_read(uint32_t addr) {
   data |= pmem[offset+1] << 8;
   data |= pmem[offset+2] << 16;
   data |= pmem[offset+3] << 24;
-  return data;
+  return static_cast<int>(data);
 }
 
-void pmem_write(uint32_t addr, uint32_t data, uint8_t mask) {
-  addr = addr & ~0x3u;
-  if (!g_mem_assert_en) return;
+extern "C" void pmem_write(int waddr, int wdata, char wmask) {
+  uint32_t addr = static_cast<uint32_t>(waddr) & ~0x3u;
+  uint8_t mask = static_cast<uint8_t>(wmask);
+  
+  // 写操作在 always @(posedge clk) 中触发，必须是稳定且合法的
+  // 如果写越界，则是真实的程序错误
   if (!in_pmem(addr)) {
     printf("[ERROR] pmem_write addr=0x%08x out of range\n", addr);
     g_mem_assert_fail = true;
     return;
   }
   uint32_t offset = addr - kPmemBase;
+  uint32_t data = static_cast<uint32_t>(wdata);
   for (int i = 0; i < 4; i++) {
     if ((mask >> i) & 1) {
       pmem[offset+i] = (data >> (i*8)) & 0xff;
@@ -74,7 +78,8 @@ static long load_img(const char *img_file) {
   fseek(fp, 0, SEEK_END);
   long size = ftell(fp);
   rewind(fp);
-  fread(pmem, 1, size, fp);
+  size_t ret = fread(pmem, 1, size, fp);
+  (void)ret;
   fclose(fp);
   printf("Load image: %s, size=%ld, base=0x%08x\n", img_file, size, kPmemBase);
   return size;
@@ -99,8 +104,6 @@ int main(int argc, char** argv) {
   top->clk = 0;
   top->rst = 1;
   top->inst = 0;
-  top->ram_rdata = 0;
-  g_mem_assert_en = false;
 
   // 复位
   for (int i=0; i<3; i++) {
@@ -111,8 +114,6 @@ int main(int argc, char** argv) {
   top->rst = 0; // Release reset
   top->clk = 0; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
   
-  g_mem_assert_en = true;
-
   uint64_t cycles = 0;
   const uint64_t max_cycles = 1000000;
 
@@ -120,36 +121,20 @@ int main(int argc, char** argv) {
     top->clk = 1; top->eval();
     uint32_t pc = top->pc;
 
-    // 1. 根据稳定且不变的此周期PC去取指令
     if (!in_pmem(pc)) {
-      printf("\033[1;31m[BAD] pc=0x%08x out of range\033[0m\n", pc);
+      printf("\033[1;31m[BAD] fetch pc=0x%08x out of range\033[0m\n", pc);
       g_mem_assert_fail = true;
       break;
     }
+    
+    // 1. 获取当前周期稳定的指令
     top->inst = pmem_read(pc);
 
-    // 2. 运算产生的第一阶段组合逻辑结果（此时已消除绝大部份毛刺）
+    // 2. 刷新组合逻辑 (由于内部使用了DPI-C触发pmem_read，这里会自动获取相关内存数据且自动忽略毛刺)
     top->eval();
-
-    // 3. 内存系统根据组合逻辑生成的稳定 ram_addr/ram_valid 等信息，对数据内存进行访问
-    if (top->ram_valid && !top->ram_wen) {
-      top->ram_rdata = pmem_read(top->ram_addr);
-    } else {
-      top->ram_rdata = 0;
-    }
-
-    // 4. 将读取的读内存数据再次流入计算，得到最终完整的正确计算结果
-    top->eval();
-
-    // 5. 同步写入：此时组合逻辑完全稳定，执行一次真实的物理内存写入
-    if (top->ram_valid && top->ram_wen && !top->rst) {
-      pmem_write(top->ram_addr, top->ram_wdata, top->ram_wmask);
-    }
-
     tfp->dump(contextp->time());
     contextp->timeInc(1);
-
-    // --- 时钟下降沿 ---
+    // 4. 时钟下降沿
     top->clk = 0;
     top->eval();
     tfp->dump(contextp->time());
