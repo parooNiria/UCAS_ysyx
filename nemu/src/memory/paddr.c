@@ -18,6 +18,10 @@
 #include <device/mmio.h>
 #include <isa.h>
 
+#ifndef MTRACE_COND
+#define MTRACE_COND true
+#endif
+
 #if   defined(CONFIG_PMEM_MALLOC)
 static uint8_t *pmem = NULL;
 #else // CONFIG_PMEM_GARRAY
@@ -41,6 +45,38 @@ static void out_of_bound(paddr_t addr) {
       addr, PMEM_LEFT, PMEM_RIGHT, cpu.pc);
 }
 
+#ifdef CONFIG_MTRACE
+static inline bool mtrace_addr_hit(paddr_t addr, int len) {
+#ifdef CONFIG_MTRACE_ADDR_RANGE
+  uint64_t left = (uint64_t)(paddr_t)CONFIG_MTRACE_ADDR_START;
+  uint64_t right = (uint64_t)(paddr_t)CONFIG_MTRACE_ADDR_END;
+  uint64_t start = (uint64_t)addr;
+  uint64_t end = start + (uint64_t)len - 1;
+  return !(end < left || start > right);
+#else
+  return true;
+#endif
+}
+
+static inline bool mtrace_on(paddr_t addr, int len) {
+  return MTRACE_COND && mtrace_addr_hit(addr, len);
+}
+
+static inline void mtrace_read_log(paddr_t addr, int len, word_t data) {
+  if (mtrace_on(addr, len)) {
+    log_write("[mtrace] R pc=" FMT_WORD " addr=" FMT_PADDR " len=%d data=" FMT_WORD "\n",
+        cpu.pc, addr, len, data);
+  }
+}
+
+static inline void mtrace_write_log(paddr_t addr, int len, word_t data) {
+  if (mtrace_on(addr, len)) {
+    log_write("[mtrace] W pc=" FMT_WORD " addr=" FMT_PADDR " len=%d data=" FMT_WORD "\n",
+        cpu.pc, addr, len, data);
+  }
+}
+#endif
+
 void init_mem() {
 #if   defined(CONFIG_PMEM_MALLOC)
   pmem = malloc(CONFIG_MSIZE);
@@ -51,14 +87,44 @@ void init_mem() {
 }
 
 word_t paddr_read(paddr_t addr, int len) {
-  if (likely(in_pmem(addr))) return pmem_read(addr, len);
-  IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
+  word_t ret = 0;
+
+  if (likely(in_pmem(addr))) {
+    ret = pmem_read(addr, len);
+#ifdef CONFIG_MTRACE
+    mtrace_read_log(addr, len, ret);
+#endif
+    return ret;
+  }
+
+#ifdef CONFIG_DEVICE
+  ret = mmio_read(addr, len);
+#ifdef CONFIG_MTRACE
+  mtrace_read_log(addr, len, ret);
+#endif
+  return ret;
+#endif
+
   out_of_bound(addr);
   return 0;
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
-  if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
-  IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
+  if (likely(in_pmem(addr))) {
+    pmem_write(addr, len, data);
+#ifdef CONFIG_MTRACE
+    mtrace_write_log(addr, len, data);
+#endif
+    return;
+  }
+
+#ifdef CONFIG_DEVICE
+  mmio_write(addr, len, data);
+#ifdef CONFIG_MTRACE
+  mtrace_write_log(addr, len, data);
+#endif
+  return;
+#endif
+
   out_of_bound(addr);
 }

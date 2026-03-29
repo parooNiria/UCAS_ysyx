@@ -18,7 +18,21 @@
 #include "../local-include/reg.h"
 
 bool isa_difftest_checkregs(CPU_state *ref_r, vaddr_t pc) {
-  return false;
+  bool match = true;
+  int reg_num = MUXDEF(CONFIG_RVE, 16, 32);
+  for (int i = 0; i < reg_num; i++) {
+    if (ref_r->gpr[i] != cpu.gpr[i]) {
+      match = false;
+      printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+      printf("  Register %s differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", reg_name(i), ref_r->gpr[i], cpu.gpr[i]);
+    }
+  }
+  if (ref_r->pc != cpu.pc) {
+    match = false;
+    printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+    printf("  PC differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->pc, cpu.pc);
+  }
+  return match;
 }
 
 void isa_difftest_attach() {

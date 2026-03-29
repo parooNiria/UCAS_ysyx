@@ -9,31 +9,9 @@ typedef struct {
   char *out;
   size_t size;
   size_t pos;
+  void (*emit)(char ch, void *ctx);
+  void *ctx;
 } outbuf_t;
-
-static int append_dec(char *out, int value) {
-  char tmp[16];
-  int n = 0;
-  unsigned int u = (unsigned int)value;
-
-  if (value < 0) {
-    u = (unsigned int)(-u);
-    *out++ = '-';
-    n++;
-  }
-
-  int k = 0;
-  do {
-    tmp[k++] = (char)('0' + (u % 10));
-    u /= 10;
-  } while (u != 0);
-
-  while (k > 0) {
-    *out++ = tmp[--k];
-    n++;
-  }
-  return n;
-}
 
 static void emit_to_console(char ch, void *ctx) {
   (void)ctx;
@@ -42,12 +20,11 @@ static void emit_to_console(char ch, void *ctx) {
 
 static void emit_to_buffer(char ch, void *ctx) {
   outbuf_t *b = (outbuf_t *)ctx;
-  if (b->size == 0) {
+  if (b->size == 0 || b->out == NULL) {
     b->pos++;
     return;
   }
-
-  if (b->pos + 1 < b->size) {
+  if (b->pos < b->size - 1) {
     b->out[b->pos] = ch;
   }
   b->pos++;
@@ -55,32 +32,122 @@ static void emit_to_buffer(char ch, void *ctx) {
 
 static int kvprintf(void (*emit)(char, void *), void *ctx, const char *fmt, va_list ap) {
   int cnt = 0;
-
-  while (*fmt != '\0') {
+  while (*fmt) {
     if (*fmt != '%') {
       emit(*fmt++, ctx);
       cnt++;
       continue;
     }
-
     fmt++; // skip '%'
-    if (*fmt == '\0') break;
+    
+    // Check flags
+    int pad_with_zero = 0;
+    if (*fmt == '0') {
+      pad_with_zero = 1;
+      fmt++;
+    }
+    
+    // Check width
+    int width = 0;
+    while (*fmt >= '0' && *fmt <= '9') {
+      width = width * 10 + (*fmt - '0');
+      fmt++;
+    }
+    
+    // Check length modifiers
+    int is_long = 0;
+    if (*fmt == 'l') {
+      is_long = 1;
+      fmt++;
+      if (*fmt == 'l') {
+        is_long = 2; // long long, treated same as long for 32-bit usually but let's just record it
+        fmt++;
+      }
+    } else if (*fmt == 'z') {
+      is_long = 1; // size_t
+      fmt++;
+    }
 
-    if (*fmt == 's') {
+    if (*fmt == '\0') break;
+    
+    char tmp[64];
+    int len = 0;
+    
+    if (*fmt == 'c') {
+      char c = (char)va_arg(ap, int);
+      emit(c, ctx);
+      cnt++;
+    } else if (*fmt == 's') {
       const char *s = va_arg(ap, const char *);
-      if (s == NULL) s = "(null)";
+      if (!s) s = "(null)";
       while (*s) {
         emit(*s++, ctx);
         cnt++;
       }
-    } else if (*fmt == 'd') {
-      char tmp[16];
-      int v = va_arg(ap, int);
-      int n = append_dec(tmp, v);
-      for (int i = 0; i < n; i++) {
-        emit(tmp[i], ctx);
+    } else if (*fmt == 'd' || *fmt == 'i') {
+      long val = is_long ? va_arg(ap, long) : va_arg(ap, int);
+      int is_neg = 0;
+      unsigned long uval = val;
+      if (val < 0) {
+        is_neg = 1;
+        uval = (unsigned long)(-val);
       }
-      cnt += n;
+      do {
+        tmp[len++] = '0' + (uval % 10);
+        uval /= 10;
+      } while (uval > 0);
+      if (is_neg) tmp[len++] = '-';
+      
+      int pads = width - len;
+      while (pads-- > 0) {
+        emit(pad_with_zero ? '0' : ' ', ctx);
+        cnt++;
+      }
+      while (len > 0) {
+        emit(tmp[--len], ctx);
+        cnt++;
+      }
+    } else if (*fmt == 'u') {
+      unsigned long uval = is_long ? va_arg(ap, unsigned long) : va_arg(ap, unsigned int);
+      do {
+        tmp[len++] = '0' + (uval % 10);
+        uval /= 10;
+      } while (uval > 0);
+      int pads = width - len;
+      while (pads-- > 0) {
+        emit(pad_with_zero ? '0' : ' ', ctx);
+        cnt++;
+      }
+      while (len > 0) {
+        emit(tmp[--len], ctx);
+        cnt++;
+      }
+    } else if (*fmt == 'x' || *fmt == 'X' || *fmt == 'p') {
+      unsigned long uval;
+      if (*fmt == 'p') {
+        uval = (unsigned long)va_arg(ap, void *);
+      } else {
+        uval = is_long ? va_arg(ap, unsigned long) : va_arg(ap, unsigned int);
+      }
+      char hex_base = (*fmt == 'X') ? 'A' : 'a';
+      do {
+        int rem = uval % 16;
+        tmp[len++] = (rem < 10) ? ('0' + rem) : (hex_base + rem - 10);
+        uval /= 16;
+      } while (uval > 0);
+      if (*fmt == 'p') {
+        pad_with_zero = 1;
+        // width = sizeof(void*) * 2 if we want to pad ptrs, or just leave it
+      }
+      int pads = width - len;
+      while (pads-- > 0) {
+        emit(pad_with_zero ? '0' : ' ', ctx);
+        cnt++;
+      }
+      while (len > 0) {
+        emit(tmp[--len], ctx);
+        cnt++;
+      }
     } else if (*fmt == '%') {
       emit('%', ctx);
       cnt++;
@@ -91,16 +158,15 @@ static int kvprintf(void (*emit)(char, void *), void *ctx, const char *fmt, va_l
     }
     fmt++;
   }
-
   return cnt;
 }
 
 int printf(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  int n = kvprintf(emit_to_console, NULL, fmt, ap);
+  int ret = kvprintf(emit_to_console, NULL, fmt, ap);
   va_end(ap);
-  return n;
+  return ret;
 }
 
 int vsprintf(char *out, const char *fmt, va_list ap) {
@@ -113,9 +179,9 @@ int vsprintf(char *out, const char *fmt, va_list ap) {
 int sprintf(char *out, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  int n = vsprintf(out, fmt, ap);
+  int ret = vsprintf(out, fmt, ap);
   va_end(ap);
-  return n;
+  return ret;
 }
 
 int snprintf(char *out, size_t n, const char *fmt, ...) {

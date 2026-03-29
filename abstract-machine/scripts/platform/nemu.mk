@@ -12,8 +12,12 @@ CFLAGS    += -I$(AM_HOME)/am/src/platform/nemu/include
 LDSCRIPTS += $(AM_HOME)/scripts/linker.ld
 LDFLAGS   += --defsym=_pmem_start=0x80000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
-NEMUFLAGS += -l $(shell dirname $(IMAGE).elf)/nemu-log.txt -b
-
+NEMUFLAGS += -l $(shell dirname $(IMAGE).elf)/nemu-log.txt 
+# Allow overriding the symbol ELF passed to NEMU, e.g. `make ... run ELF=/path/to/app.elf`.
+ifneq ($(strip $(ELF)),)
+NEMUFLAGS += -e $(ELF)
+endif
+#-b 可开启批处理模式
 MAINARGS_MAX_LEN = 64
 MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
 CFLAGS += -DMAINARGS_MAX_LEN=$(MAINARGS_MAX_LEN) -DMAINARGS_PLACEHOLDER=$(MAINARGS_PLACEHOLDER)

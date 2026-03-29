@@ -157,6 +157,49 @@ config WATCHPOINT
   help
     Enable watchpoint checking in cpu execution loop.
 
+config MTRACE
+  bool "Enable memory tracer"
+  default n
+  help
+    Record physical memory read/write trace in paddr_read()/paddr_write().
+
+config MTRACE_COND
+  depends on MTRACE
+  string "Only trace memory accesses when the condition is true"
+  default "true"
+
+config MTRACE_ADDR_RANGE
+  depends on MTRACE
+  bool "Only trace accesses in address range"
+  default n
+
+config MTRACE_ADDR_START
+  depends on MTRACE && MTRACE_ADDR_RANGE
+  hex "Mtrace address range start"
+  default 0x0
+
+config MTRACE_ADDR_END
+  depends on MTRACE && MTRACE_ADDR_RANGE
+  hex "Mtrace address range end"
+  default 0xffffffff
+
+config DTRACE
+  bool "Enable device tracer"
+  default n
+  help
+    Record device memory-mapped I/O (MMIO) and port I/O (PIO) accesses.
+
+config DTRACE_COND
+  depends on DTRACE
+  string "Only trace device accesses when the condition is true"
+  default "true"
+
+config FTRACE
+  depends on TRACE && TARGET_NATIVE_ELF && ENGINE_INTERPRETER
+  bool "Enable function tracer"
+  default n
+  help
+    Enable function call/return trace logging based on ELF symbols.
 
 config DIFFTEST
   depends on TARGET_NATIVE_ELF

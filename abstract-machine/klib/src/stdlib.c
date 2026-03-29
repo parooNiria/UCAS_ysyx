@@ -29,14 +29,28 @@ int atoi(const char* nptr) {
   return x;
 }
 
+#if !(defined(__ISA_NATIVE__) && defined(__NATIVE_USE_KLIB__))
+static void *hbrk = NULL;
+#endif
+
 void *malloc(size_t size) {
+
   // On native, malloc() will be called during initializaion of C runtime.
   // Therefore do not call panic() here, else it will yield a dead recursion:
   //   panic() -> putchar() -> (glibc) -> malloc() -> panic()
 #if !(defined(__ISA_NATIVE__) && defined(__NATIVE_USE_KLIB__))
-  panic("Not implemented");
-#endif
+  if (hbrk == NULL) hbrk = (void *)ROUNDUP(heap.start, 8);
+  size = (size_t)ROUNDUP(size, 8);
+  void *old = hbrk;
+  hbrk = (void *)((uint8_t *)hbrk + size);
+  if (hbrk > heap.end) {
+    printf("OOM: size=%u, hbrk=%p, heap_end=%p\n", (unsigned int)size, hbrk, heap.end);
+    panic("OOM");
+  }
+  return old;
+#else
   return NULL;
+#endif
 }
 
 void free(void *ptr) {
