@@ -21,8 +21,8 @@ VERILATOR_FLAGS = \
 	--trace-fst \
 	-Mdir $(OBJ_DIR) \
 	-GRESET_PC=$(BIN_BASE) \
-	-CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)"
-
+	-CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)" \
+        -LDFLAGS "-lcapstone -ldl"
 all: $(BIN)
 
 $(BIN): $(VSRCS) $(CSRCS)
