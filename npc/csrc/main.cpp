@@ -84,10 +84,10 @@ bool check_difftest(uint32_t npc_pc, uint32_t npc_next_pc) {
   bool match = true;
   svSetScope(svGetScopeFromName("TOP.top"));
   for (int i = 0; i < 32; i++) {
-    uint32_t npc_reg = read_register(i);
-    if (ref_cpu.gpr[i] != npc_reg) {
+    uint32_t my_reg = read_register(i);
+    if (ref_cpu.gpr[i] != my_reg) {
       if (match) printf("\nDifftest failed at pc=0x%08x!\n", npc_pc);
-      printf("Reg %02d differ! ref=0x%08x, npc=0x%08x\n", i, ref_cpu.gpr[i], npc_reg);
+      printf("Reg %02d differ! ref=0x%08x, my_reg=0x%08x\n", i, ref_cpu.gpr[i], my_reg);
       match = false;
     }
   }
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
   contextp->commandArgs(argc, argv);
   Vtop* top = new Vtop(contextp);
 
-  init_difftest("/home/stu/ysyx-workbench/nemu/tools/spike-diff/build/riscv32-spike-so", img_size, 0);
+  init_difftest("/home/stu/ysyx-workbench/nemu/build/riscv32-nemu-interpreter-so", img_size, 0);
 
   Verilated::traceEverOn(true);
   VerilatedFstC* tfp = new VerilatedFstC;
@@ -240,6 +240,13 @@ int main(int argc, char** argv) {
   top->rst = 0; // Release reset
   top->clk = 0; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
   
+  // 滤除掉复位后 valid 还没拉高时的不工作周期
+  top->clk = 1; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
+  top->clk = 0; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
+  top->clk = 1; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
+  top->clk = 0; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
+
+
   uint64_t cycles = 0;
   const uint64_t max_cycles = 1000000;
   
@@ -309,12 +316,12 @@ int main(int argc, char** argv) {
     top->eval();
 
     // 3. 处理数据内存的组合逻辑读，只有在读使能时才读取数据
-    if (top->ram_ren_o) {
-        top->ram_rdata_i = pmem_read(top->ram_addr_o);
+    if (top->ram_ren) {
+        top->ram_rdata = pmem_read(top->ram_addr);
         // 读取数据后，再次刷新组合逻辑，因为读出来的数据会影响到写回寄存器的数据
         top->eval();
     } else {
-        top->ram_rdata_i = 0;
+        top->ram_rdata = 0;
     }
 
     tfp->dump(contextp->time());
