@@ -201,6 +201,13 @@ config FTRACE
   help
     Enable function call/return trace logging based on ELF symbols.
 
+config ETRACE
+  depends on TRACE
+  bool "Enable exception tracer"
+  default y
+  help
+    Enable logging when an exception or interrupt is raised.
+
 config DIFFTEST
   depends on TARGET_NATIVE_ELF
   bool "Enable differential testing"

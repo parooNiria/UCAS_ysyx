@@ -7,6 +7,15 @@ PMEM_BASE ?= $(BIN_BASE)
 PMEM_SIZE ?= 0x08000000
 IMG       ?= /home/stu/ysyx-workbench/am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).bin
 MAX_CYCLES ?= 1000000
+REF ?= nemu
+
+ifeq ($(REF), spike)
+REF_SO_FILE ?= $(NEMU_HOME)/tools/spike-diff/build/riscv32-spike-so
+else ifeq ($(REF), nemu)
+REF_SO_FILE ?= $(NEMU_HOME)/build/riscv32-nemu-interpreter-so
+else
+$(error Unsupported REF value: $(REF). Supported values: spike, nemu)
+endif
 
 BUILD_DIR = $(abspath ./build)
 OBJ_DIR   = $(BUILD_DIR)/obj_dir
@@ -35,7 +44,7 @@ run: $(BIN)
 		echo "Usage: make run IMG=/path/to/image.bin [BIN_BASE=0x80000000] [PMEM_BASE=0x80000000]"; \
 		exit 1; \
 	fi
-	$(BIN) $(IMG)
+	$(BIN) $(IMG) $(REF_SO_FILE)
 
 sim: $(BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
