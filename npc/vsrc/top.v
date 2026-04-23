@@ -19,7 +19,13 @@ module top #(
     function int read_pc();
         read_pc = pc;
     endfunction
-
+    export "DPI-C" function read_csr;
+    function int read_csr(input int addr);
+        read_csr = (addr == 'h300) ? u_csr.mstatus :
+                   (addr == 'h305) ? u_csr.mtvec :
+                   (addr == 'h341) ? u_csr.mepc :
+                   (addr == 'h342) ? u_csr.mcause : 0;
+    endfunction
     reg reset;
     always @(posedge clk) begin
         reset <= rst;
@@ -86,6 +92,14 @@ module top #(
     wire inst_or    = opcode_d[7'b0110011] & func3_d[3'b110] & func7_d[7'b0000000];
     wire inst_and   = opcode_d[7'b0110011] & func3_d[3'b111] & func7_d[7'b0000000];
     wire inst_ebreak = (inst == 32'h00100073);
+    wire inst_csrrw = opcode_d[7'b1110011] & func3_d[3'b001];
+    wire inst_csrrs = opcode_d[7'b1110011] & func3_d[3'b010];
+    wire inst_csrrc = opcode_d[7'b1110011] & func3_d[3'b011];
+    wire inst_csrrwi= opcode_d[7'b1110011] & func3_d[3'b101];
+    wire inst_csrrsi= opcode_d[7'b1110011] & func3_d[3'b110];
+    wire inst_csrrci= opcode_d[7'b1110011] & func3_d[3'b111];
+    wire inst_mret   = opcode_d[7'b1110011] & func3_d[3'b000] & func7_d[7'b0011000]&& (rd == 5'b00000) && (rs1 == 5'b00000) && (rs2 == 5'b00010);
+    wire inst_ecall   = opcode_d[7'b1110011] & func3_d[3'b000] && (inst[31:20] == 12'b0);
 
     wire need_imm_i;
     wire need_imm_s;
@@ -124,6 +138,21 @@ module top #(
     wire [4:0]  rf_waddr;
     wire [31:0] rf_wdata;
 
+    wire csr_we;
+    wire res_from_csr;
+    wire csr_data_is_imm;
+    wire [11:0] csr_waddr;
+    wire [31:0] csr_wdata;
+    wire [31:0] csr_wmask;
+    wire [11:0] csr_raddr;
+    wire [31:0] csr_rdata;
+    wire        ex_happen;
+    wire [31:0] csr_epc;
+    wire [31:0] csr_cause;
+    wire        csr_mret;
+    wire [31:0] csr_mtvec;
+    wire [31:0] csr_mepc;
+
     wire [31:0] alu_src1;
     wire [31:0] alu_src2;
     wire [31:0] alu_result;
@@ -136,7 +165,9 @@ module top #(
     wire [7:0]   ram_mask;
 
     assign seq_pc = pc + 4;
-    assign next_pc = (br_taken) ? br_target : seq_pc;
+    assign next_pc = ex_happen ? csr_mtvec :
+                     inst_mret ? csr_mepc :
+                    (br_taken) ? br_target : seq_pc;
     
     always @(posedge clk) begin
         if (reset) begin
@@ -191,7 +222,11 @@ module top #(
                         inst_lui | inst_auipc | inst_jal;
     
     assign res_from_mem = inst_lb | inst_lh | inst_lw | inst_lbu | inst_lhu;
-    assign gr_we = ~inst_sb & ~inst_sh & ~inst_sw & ~inst_beq & ~inst_bne & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu;
+    assign res_from_csr = inst_csrrw | inst_csrrs | inst_csrrc | inst_csrrwi | inst_csrrsi | inst_csrrci;
+    assign gr_we = ~inst_sb & ~inst_sh & ~inst_sw & ~inst_beq 
+            & ~inst_bne & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu
+            & ~inst_ecall & ~inst_ebreak & ~inst_mret;
+    
     assign mem_we = inst_sb | inst_sh | inst_sw;
     assign dest   = rd;
 
@@ -238,6 +273,37 @@ module top #(
         .alu_src2(alu_src2),
         .alu_result(alu_result)
     );
+    wire [31:0] csr_uimm = {27'b0, rs1};
+    wire [31:0] csr_op_data = csr_data_is_imm ? csr_uimm : rs1_value;
+    assign csr_data_is_imm = inst_csrrwi | inst_csrrsi | inst_csrrci;
+    assign csr_we = (inst_csrrw | inst_csrrwi | ((inst_csrrs | inst_csrrc | inst_csrrsi | inst_csrrci) & (rs1 != 5'b0))) & valid;
+    assign csr_waddr = inst[31:20];
+    assign csr_wdata = (inst_csrrc | inst_csrrci) ? 32'h0 : 
+                       (inst_csrrw | inst_csrrwi) ? csr_op_data : 32'hFFFFFFFF;
+    assign csr_wmask = (inst_csrrw | inst_csrrwi) ? 32'hFFFFFFFF : csr_op_data;
+
+    assign csr_raddr = inst[31:20];
+    assign ex_happen = (inst_ecall) & valid;
+    assign csr_epc = pc;
+    assign csr_cause = inst_ecall ? 32'd11 : 32'd3;
+    assign csr_mret = inst_mret & valid;
+
+     csr u_csr(
+        .clk(clk),
+        .rst(reset),
+        .csr_we(csr_we),
+        .csr_waddr(csr_waddr),
+        .csr_wmask(csr_wmask),
+        .csr_wdata(csr_wdata),
+        .csr_raddr(csr_raddr),
+        .csr_rdata(csr_rdata),
+        .ex(ex_happen),
+        .epc(csr_epc),
+        .cause(csr_cause),
+        .mret(csr_mret),
+        .mtvec_val(csr_mtvec),
+        .mepc_val(csr_mepc)
+    );
 
     assign ram_addr = {alu_result[31:2],2'b00}; 
     assign ram_ren  = (inst_lb | inst_lh | inst_lw | inst_lbu | inst_lhu) & valid;
@@ -252,7 +318,9 @@ module top #(
                        (inst_lhu) ? {16'b0, lh_result} :
                        (inst_lbu) ? {24'b0, lb_result} :
                        ram_rdata;
-    assign final_result = (res_from_mem) ? mem_result : alu_result;
+    assign final_result =   (res_from_mem) ? mem_result : 
+                            (res_from_csr) ? csr_rdata :
+                            alu_result;
    
     assign ram_wdata = (inst_sb) ? {4{rs2_value[7:0]}} :
                        (inst_sh) ? {2{rs2_value[15:0]}} :

@@ -30,6 +30,7 @@ typedef struct {
   uintptr_t cause, ref;
   const char *msg;
 } Event;
+//event事件编号
 
 // A protected address space with user memory @area
 // and arch-dependent @ptr

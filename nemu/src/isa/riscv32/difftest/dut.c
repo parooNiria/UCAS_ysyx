@@ -32,6 +32,26 @@ bool isa_difftest_checkregs(CPU_state *ref_r, vaddr_t pc) {
     printf("Difftest fail at pc = " FMT_WORD "\n", pc);
     printf("  PC differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->pc, cpu.pc);
   }
+  if (ref_r->mstatus != cpu.mstatus) {
+    match = false;
+    printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+    printf("  mstatus differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->mstatus, cpu.mstatus);
+  }
+  if (ref_r->mepc != cpu.mepc) {
+    match = false;
+    printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+    printf("  mepc differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->mepc, cpu.mepc);
+  }
+  if (ref_r->mcause != cpu.mcause) {
+    match = false;
+    printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+    printf("  mcause differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->mcause, cpu.mcause);
+  }
+  if (ref_r->mtvec != cpu.mtvec) {
+    match = false;
+    printf("Difftest fail at pc = " FMT_WORD "\n", pc);
+    printf("  mtvec differs: ref = " FMT_WORD ", nemu = " FMT_WORD "\n", ref_r->mtvec, cpu.mtvec);
+  }
   return match;
 }
 

@@ -55,6 +55,18 @@ static void decode_operand(Decode *s, int *rd, word_t *src1, word_t *src2, word_
   }
 }
 
+static word_t* csr_get(int csr_id) {
+  switch (csr_id) {
+    case 0x300: return &cpu.mstatus;
+    case 0x305: return &cpu.mtvec;
+    case 0x341: return &cpu.mepc;
+    case 0x342: return &cpu.mcause;
+    case 0x7b0: return &cpu.gpr[0]; // dummy test (dcsr)
+    case 0x7b1: return &cpu.gpr[0]; // dummy test (dpc)
+    default: panic("Unsupported CSR 0x%x", csr_id);
+  }
+}
+
 static int decode_exec(Decode *s) {
   s->dnpc = s->snpc;
 
@@ -144,6 +156,50 @@ static int decode_exec(Decode *s) {
   INSTPAT("0000000 ????? ????? 111 ????? 01100 11", and    , R, R(rd) = src1 & src2);
   
   INSTPAT("0000000 00001 00000 000 00000 11100 11", ebreak , N, NEMUTRAP(s->pc, R(10))); // R(10) is $a0
+  INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall  , N, s->dnpc = isa_raise_intr(11, s->pc));
+  
+  INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, 
+    s->dnpc = cpu.mepc;
+    isa_mret();
+  );
+
+  INSTPAT("??????? ????? ????? 001 ????? 11100 11", csrrw  , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = src1;
+    R(rd) = t;
+  );
+  INSTPAT("??????? ????? ????? 010 ????? 11100 11", csrrs  , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = t | src1;
+    R(rd) = t;
+  );
+  INSTPAT("??????? ????? ????? 011 ????? 11100 11", csrrc  , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = t & ~src1;
+    R(rd) = t;
+  );
+  INSTPAT("??????? ????? ????? 101 ????? 11100 11", csrrwi , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = BITS(s->isa.inst, 19, 15);
+    R(rd) = t;
+  );
+  INSTPAT("??????? ????? ????? 110 ????? 11100 11", csrrsi , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = t | BITS(s->isa.inst, 19, 15);
+    R(rd) = t;
+  );
+  INSTPAT("??????? ????? ????? 111 ????? 11100 11", csrrci , I, 
+    word_t *csr = csr_get(BITS(s->isa.inst, 31, 20));
+    word_t t = *csr;
+    *csr = t & ~((word_t)BITS(s->isa.inst, 19, 15));
+    R(rd) = t;
+  );
+
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));
 
   INSTPAT_END();
