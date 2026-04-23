@@ -12,9 +12,6 @@
 !init.sh
 nvboard/
 am-kernels/
-<<<<<<< HEAD
 /am-kernels
 /fceux-am
-=======
 /nvboard
->>>>>>> pa3
