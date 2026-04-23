@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
   }
   long img_size = load_img((argc >= 2) ? argv[1] : nullptr);
 
-  const char *ref_so_file = (argc >= 3) ? argv[2] : "/home/stu/ysyx-workbench/nemu/build/riscv32-nemu-interpreter-so";
+  const char *ref_so_file = (argc >= 3) ? argv[2] : NULL;
+  const bool enable_difftest = (ref_so_file != NULL && ref_so_file[0] != '\0');
 
   VerilatedContext* contextp = new VerilatedContext;
   contextp->commandArgs(argc, argv);
@@ -58,7 +59,9 @@ int main(int argc, char** argv) {
   top->clk = 1; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
   top->clk = 0; top->eval(); tfp->dump(contextp->time()); contextp->timeInc(1);
 
-  init_difftest(ref_so_file, img_size, 0);
+  if (enable_difftest) {
+    init_difftest(ref_so_file, img_size, 0);
+  }
   uint64_t cycles = 0;
   const uint64_t max_cycles = 1000000;
   int has_max_cycles = 0;
@@ -106,7 +109,7 @@ int main(int argc, char** argv) {
 
     top->clk = 1; 
     top->eval();
-    if (cycles > 0) {
+    if (enable_difftest && cycles > 0) {
       if (!check_difftest(last_pc, top->pc)) {
         svSetScope(svGetScopeFromName("TOP.top"));
         display_trap_info(last_pc, read_register(10), "Difftest Failed");

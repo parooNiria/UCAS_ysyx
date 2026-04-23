@@ -5,7 +5,7 @@ IMG_FILE_NAME ?= add-minirv-npc
 BIN_BASE  ?= 0x80000000
 PMEM_BASE ?= $(BIN_BASE)
 PMEM_SIZE ?= 0x08000000
-IMG       ?= /home/stu/ysyx-workbench/am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).bin
+IMG       ?= $(NEMU_HOME)/../am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).bin
 MAX_CYCLES ?= 1000000
 REF ?= nemu
 
@@ -37,6 +37,7 @@ all: $(BIN)
 $(BIN): $(VSRCS) $(CSRCS)
 	@mkdir -p $(BUILD_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
+	@rm -f $(BIN)
 	@cp $(OBJ_DIR)/V$(TOPNAME) $(BIN)
 
 run: $(BIN)

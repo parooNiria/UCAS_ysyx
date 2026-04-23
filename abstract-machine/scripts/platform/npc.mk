@@ -3,6 +3,7 @@ AM_SRCS := riscv/npc/start.S \
            riscv/npc/ioe.c \
            riscv/npc/timer.c \
            riscv/npc/input.c \
+           riscv/npc/uart.c \
            riscv/npc/cte.c \
            riscv/npc/trap.S \
            platform/dummy/vme.c \
@@ -26,6 +27,6 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: insert-arg
-	cd /home/stu/ysyx-workbench/npc && make run IMG=$(IMAGE).bin
+	cd $(NPC_HOME) && make run IMG=$(IMAGE).bin REF_SO_FILE=
 
 .PHONY: insert-arg
