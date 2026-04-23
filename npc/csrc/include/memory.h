@@ -14,6 +14,7 @@
 extern const uint32_t kPmemBase;
 extern const uint32_t kPmemSize;
 extern uint8_t *pmem;
+extern bool g_mmio_accessed;
 
 bool in_pmem(uint32_t addr);
 int pmem_read_internal(uint32_t addr);

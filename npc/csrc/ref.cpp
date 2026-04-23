@@ -49,13 +49,26 @@ void init_difftest(const char *ref_so_file, long img_size, int port) {
   ref_difftest_regcpy(&cpu, DIFFTEST_TO_REF);
 }
 
-bool check_difftest(uint32_t npc_pc, uint32_t npc_next_pc) {
+bool check_difftest(uint32_t npc_pc, uint32_t npc_next_pc, bool skip_compare) {
   if (ref_difftest_exec == NULL) {
     printf("Warning: ref_difftest_exec is NULL, cannot perform difftest check.\n"); 
     return true;
   }
- 
+  if (skip_compare) {
+    diff_context_t dut_cpu;
+    svSetScope(svGetScopeFromName("TOP.top"));
+    for (int i = 0; i < 32; i++) dut_cpu.gpr[i] = read_register(i);
+    dut_cpu.pc = npc_next_pc;
+    dut_cpu.mstatus = read_csr(0x300);
+    dut_cpu.mtvec   = read_csr(0x305);
+    dut_cpu.mepc    = read_csr(0x341);
+    dut_cpu.mcause  = read_csr(0x342);
+    ref_difftest_regcpy(&dut_cpu, DIFFTEST_TO_REF);
+    return true;
+  }
+
   ref_difftest_exec(1);
+
   diff_context_t ref_cpu;
   ref_difftest_regcpy(&ref_cpu, DIFFTEST_TO_DUT);
   bool match = true;

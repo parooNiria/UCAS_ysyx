@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
   uint64_t sdb_step_count = 0;
   uint32_t last_pc = 0;
 
+
   while (!contextp->gotFinish() && !g_ebreak && !g_mem_assert_fail && (cycles < max_cycles || !has_max_cycles)) {
     if (sdb_mode && sdb_step_count == 0) {
       char buf[256];
@@ -107,16 +108,20 @@ int main(int argc, char** argv) {
       sdb_step_count--;
     }
 
+
     top->clk = 1; 
     top->eval();
+    bool skip_this_difftest = g_mmio_accessed;
+    g_mmio_accessed = false;
+
     if (enable_difftest && cycles > 0) {
-      if (!check_difftest(last_pc, top->pc)) {
+      if (!check_difftest(last_pc, top->pc, skip_this_difftest)) {
         svSetScope(svGetScopeFromName("TOP.top"));
         display_trap_info(last_pc, read_register(10), "Difftest Failed");
         break;
       }
     }
-
+    skip_this_difftest = false;
     uint32_t pc = top->pc;
     last_pc = pc;
 

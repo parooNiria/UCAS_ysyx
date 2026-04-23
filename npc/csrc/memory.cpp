@@ -5,6 +5,7 @@ const uint32_t kPmemBase = static_cast<uint32_t>(PMEM_BASE);
 const uint32_t kPmemSize = static_cast<uint32_t>(PMEM_SIZE);
 static uint8_t pmem_arr[kPmemSize] = {0};
 uint8_t *pmem = pmem_arr;
+bool g_mmio_accessed = false;
 
 static constexpr uint32_t kSerialPort = 0xa00003f8u;
 static constexpr uint32_t kSerialWord0 = kSerialPort & ~0x3u;
@@ -16,6 +17,7 @@ static inline bool is_serial_word(uint32_t addr) {
 }
 
 static inline uint32_t serial_mmio_read(uint32_t addr) {
+  g_mmio_accessed = true;
   if (addr == kSerialWord0) {
     // No RX data ready; return 0xff for byte reads.
     return 0xffffffffu;
@@ -25,6 +27,7 @@ static inline uint32_t serial_mmio_read(uint32_t addr) {
 }
 
 static inline void serial_mmio_write(uint32_t addr, uint32_t data, uint8_t mask) {
+  g_mmio_accessed = true;
   if (addr == kSerialWord0 && (mask & 0x01u)) {
     putchar(static_cast<int>(data & 0xffu));
     fflush(stdout);
