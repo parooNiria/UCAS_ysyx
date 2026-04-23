@@ -7,7 +7,7 @@ PMEM_BASE ?= $(BIN_BASE)
 PMEM_SIZE ?= 0x08000000
 IMG       ?= $(NEMU_HOME)/../am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).bin
 MAX_CYCLES ?= 1000000
-REF ?= nemu
+REF ?= spike
 
 ifeq ($(REF), spike)
 REF_SO_FILE ?= $(NEMU_HOME)/tools/spike-diff/build/riscv32-spike-so

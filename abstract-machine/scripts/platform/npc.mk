@@ -27,6 +27,6 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: insert-arg
-	cd $(NPC_HOME) && make run IMG=$(IMAGE).bin REF_SO_FILE=
+	cd $(NPC_HOME) && make run IMG=$(IMAGE).bin
 
 .PHONY: insert-arg

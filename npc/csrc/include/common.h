@@ -23,7 +23,7 @@ void display_trap_info(uint32_t pc, int a0, const char *reason);
 
 // difftest
 void init_difftest(const char *ref_so_file, long img_size, int port);
-bool check_difftest(uint32_t npc_pc, uint32_t npc_next_pc);
+bool check_difftest(uint32_t npc_pc, uint32_t npc_next_pc,bool skip_compare);
 
 // ebreak
 void ebreak_notify();
