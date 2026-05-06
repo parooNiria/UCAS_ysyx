@@ -1,63 +1,35 @@
-TOPNAME    = top
-VERILATOR ?= verilator
+BUILD_DIR = ./build
 
-IMG_FILE_NAME ?= add-minirv-npc
-BIN_BASE  ?= 0x80000000
-PMEM_BASE ?= $(BIN_BASE)
-PMEM_SIZE ?= 0x08000000
-IMG       ?= $(NEMU_HOME)/../am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).bin
-MAX_CYCLES ?= 1000000
-REF ?= spike
+test:
+	mill -i test
 
-ifeq ($(REF), spike)
-REF_SO_FILE ?= $(NEMU_HOME)/tools/spike-diff/build/riscv32-spike-so
-else ifeq ($(REF), nemu)
-REF_SO_FILE ?= $(NEMU_HOME)/build/riscv32-nemu-interpreter-so
-else
-$(error Unsupported REF value: $(REF). Supported values: spike, nemu)
-endif
+verilog:
+	$(call git_commit, "generate verilog")
+	mkdir -p $(BUILD_DIR)
+	mill -i runMain Elaborate --target-dir $(BUILD_DIR)
 
-BUILD_DIR = $(abspath ./build)
-OBJ_DIR   = $(BUILD_DIR)/obj_dir
-BIN       = $(BUILD_DIR)/$(TOPNAME)
+help:
+	mill -i runMain Elaborate --help
 
-VSRCS = $(wildcard vsrc/*.v)
-CSRCS = $(wildcard csrc/*.cpp)
+reformat:
+	mill -i __.reformat
 
-VERILATOR_FLAGS = \
-	--cc --exe --build \
-	--top-module $(TOPNAME) \
-	--trace-fst \
-	-Mdir $(OBJ_DIR) \
-	-GRESET_PC=$(BIN_BASE) \
-	-CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)" \
-        -LDFLAGS "-lcapstone -ldl"
-all: $(BIN)
+checkformat:
+	mill -i __.checkFormat
 
-$(BIN): $(VSRCS) $(CSRCS)
-	@mkdir -p $(BUILD_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
-	@rm -f $(BIN)
-	@cp $(OBJ_DIR)/V$(TOPNAME) $(BIN)
+bsp:
+	mill -i mill.bsp.BSP/install
 
-run: $(BIN)
-	@if [ -z "$(IMG)" ]; then \
-		echo "Usage: make run IMG=/path/to/image.bin [BIN_BASE=0x80000000] [PMEM_BASE=0x80000000]"; \
-		exit 1; \
-	fi
-	$(BIN) $(IMG) $(REF_SO_FILE)
-
-sim: $(BIN)
-	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
-	@if [ -z "$(IMG)" ]; then \
-		echo "Usage: make sim IMG=/path/to/image.bin [BIN_BASE=0x80000000] [PMEM_BASE=0x80000000]"; \
-		exit 1; \
-	fi
-	$(BIN) $(IMG)
+idea:
+	mill -i mill.idea.GenIdea/idea
 
 clean:
-	@rm -rf $(BUILD_DIR) wave.fst
+	-rm -rf $(BUILD_DIR)
 
-.PHONY: all run sim clean
+.PHONY: test verilog help reformat checkformat clean
 
-include ../Makefile
+sim:
+	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
+	@echo "Write this Makefile by yourself."
+
+-include ../Makefile
