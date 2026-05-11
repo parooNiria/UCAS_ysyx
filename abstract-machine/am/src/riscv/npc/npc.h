@@ -20,10 +20,7 @@ extern char _pmem_start;
 #define PMEM_SIZE (128 * 1024 * 1024)
 #define PMEM_END  ((uintptr_t)&_pmem_start + PMEM_SIZE)
 
-<<<<<<< HEAD
-=======
 #define PGSIZE 4096
 typedef uintptr_t PTE;
 
->>>>>>> pa3
 #endif
