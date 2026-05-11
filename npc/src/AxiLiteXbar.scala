@@ -14,7 +14,7 @@ class AxiLiteXbar extends Module {
   // Address range checks
   def isUart(addr: UInt): Bool = addr >= "hA00003F8".U && addr < "hA0000400".U
   def isClint(addr: UInt): Bool = addr >= "hA0000048".U && addr < "hA0000050".U
-  def isSram(addr: UInt): Bool = addr >= "h80000000".U && addr < "h81000000".U
+  def isSram(addr: UInt): Bool = addr >= "h80000000".U && addr < "h88000000".U
   def isDevice(addr: UInt): Bool = isUart(addr) || isClint(addr)
 
   // Read targets

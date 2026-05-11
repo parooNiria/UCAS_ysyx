@@ -11,6 +11,7 @@ public:
 private:
   bool sram_read_pending = false;
   unsigned sram_read_addr = 0;
+  int sram_read_delay_count = 0;
 
   bool sram_aw_captured = false;
   unsigned sram_aw_addr = 0;
@@ -19,6 +20,7 @@ private:
   unsigned char sram_w_strb = 0;
 
   bool sram_write_pending = false;
+  int sram_write_delay_count = 0;
 };
 
 #endif

@@ -1,25 +1,31 @@
 #include "include/axi_memory.h"
 #include "Vtop.h"
 #include "include/memory.h"
+#include <stdlib.h>
 
 void AxiLiteMemory::drive(Vtop *top) {
   top->io_axi_sram_awready = (!sram_write_pending && !sram_aw_captured) ? 1 : 0;
   top->io_axi_sram_wready = (!sram_write_pending && !sram_w_captured) ? 1 : 0;
   top->io_axi_sram_arready = sram_read_pending ? 0 : 1;
   top->io_axi_sram_rresp = 0;
-  top->io_axi_sram_rvalid = sram_read_pending ? 1 : 0;
-  top->io_axi_sram_rdata = sram_read_pending ? pmem_read(sram_read_addr) : 0;
+  top->io_axi_sram_rvalid = (sram_read_pending && sram_read_delay_count == 0) ? 1 : 0;
+  top->io_axi_sram_rdata = (sram_read_pending && sram_read_delay_count == 0) ? pmem_read(sram_read_addr) : 0;
   top->io_axi_sram_bresp = 0;
-  top->io_axi_sram_bvalid = sram_write_pending ? 1 : 0;
+  top->io_axi_sram_bvalid = (sram_write_pending && sram_write_delay_count == 0) ? 1 : 0;
 }
 
 void AxiLiteMemory::sample(Vtop *top) {
   if (!sram_read_pending && top->io_axi_sram_arvalid && top->io_axi_sram_arready) {
     sram_read_pending = true;
     sram_read_addr = top->io_axi_sram_araddr;
+    sram_read_delay_count = rand() % 5 + 1; // 1 to 5 cycles read delay
   }
-  if (sram_read_pending && top->io_axi_sram_rvalid && top->io_axi_sram_rready) {
-    sram_read_pending = false;
+  if (sram_read_pending) {
+    if (sram_read_delay_count > 0) {
+      sram_read_delay_count--;
+    } else if (top->io_axi_sram_rvalid && top->io_axi_sram_rready) {
+      sram_read_pending = false;
+    }
   }
 
   if (!sram_write_pending) {
@@ -38,10 +44,15 @@ void AxiLiteMemory::sample(Vtop *top) {
       sram_aw_captured = false;
       sram_w_captured = false;
       sram_write_pending = true;
+      sram_write_delay_count = rand() % 5 + 1; // 1 to 5 cycles write delay
     }
   }
 
-  if (sram_write_pending && top->io_axi_sram_bvalid && top->io_axi_sram_bready) {
-    sram_write_pending = false;
+  if (sram_write_pending) {
+    if (sram_write_delay_count > 0) {
+      sram_write_delay_count--;
+    } else if (top->io_axi_sram_bvalid && top->io_axi_sram_bready) {
+      sram_write_pending = false;
+    }
   }
 }

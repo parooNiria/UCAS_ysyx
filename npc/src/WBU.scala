@@ -49,8 +49,8 @@ class WBU extends Module {
     csr.io.csr_wmask := Mux(func3 === "b001".U || func3 === "b101".U, "hffffffff".U(32.W), csr_write_data_reg)
     csr.io.csr_we := valid && reg_csr_en_dest_reg(6)
     csr.io.csr_raddr := inst_reg(31, 20)
-    csr.io.ex := instEcall || instEbreak
-    csr.io.mret := instMret
+    csr.io.ex := (instEcall || instEbreak)&&valid
+    csr.io.mret := instMret&&valid
     csr.io.epc := pc_reg
     csr.io.cause := Mux(instEcall, 11.U, 3.U)
 
