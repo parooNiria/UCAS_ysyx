@@ -51,7 +51,7 @@ class IFU extends Module {
         }
     }
 
-    val pc = RegInit("h80000000".U(32.W))
+    val pc = RegInit("h20000000".U(32.W))
     when(valid && io.commit_info.commit_valid) {
         pc := io.commit_info.next_pc
     }

@@ -23,17 +23,16 @@ OBJ_DIR   = $(BUILD_DIR)/obj_dir
 BIN       = $(BUILD_DIR)/$(TOPNAME)
 PERIP_DIR   := $(SOC_HOME)/perip
 # 包含 C++ 仿真文件 (从当前的sim_csrc、csrc中捕获)
-CSRCS = $(wildcard sim_csrc/*.cpp csrc/*.cpp sim_csrc/*.c)
+CSRCS = $(wildcard soc_csrc/*.cpp )
 # svdpi scope APIs (svGetScopeFromName/svSetScope) are implemented here in Verilator.
 CSRCS += $(VERILATOR_ROOT)/include/verilated_dpi.cpp
 # 包含 Scala 源码和构建脚本，用于判断是否需要重新生成 Verilog
 SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
 
 VSRCS =  $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
-VSRC += $(BUILD_DIR)/ysyxSoCFull.v
+VSRCS += $(SOC_HOME)/build/ysyxSoCFull.v
 VSRCS += $$(find $(PERIP_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 VERILATOR_FLAGS = \
-  -Wno-PINMISSING \
   --cc --exe --build -j 0 --trace-fst \
   --top-module $(TOPNAME) \
   -Mdir $(OBJ_DIR) \
@@ -68,7 +67,7 @@ run: $(BIN)
 		echo "Usage: make run IMG=/path/to/image.bin [BIN_BASE=0x80000000] [PMEM_BASE=0x80000000]"; \
 		exit 1; \
 	fi
-	$(BIN) $(IMG) $(REF_SO_FILE) -s
+	$(BIN) $(IMG) 
 
 sim: $(BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!

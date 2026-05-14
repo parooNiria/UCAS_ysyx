@@ -3,6 +3,27 @@ package npc
 import chisel3._
 import chisel3.util._
 
+class EbreakDPI extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val enable = Input(Bool())  // 触发信号 = ebreak
+  })
+
+  // 直接内嵌 Verilog + DPI-C 调用
+  setInline("EbreakDPI.v",
+    """
+    module EbreakDPI(
+        input enable
+    );
+    import "DPI-C" function void dpi_ebreak();
+    always @(*) begin
+    if (enable) begin
+        dpi_ebreak();  // ebreak 时调用 C 函数
+    end
+    end
+    endmodule
+    """.stripMargin)
+}
+
 class WBU extends Module {
     val io = IO(new Bundle {
         val in = Flipped(Decoupled(new MessageMEM))
@@ -70,4 +91,6 @@ class WBU extends Module {
     io.out.commit_valid := valid
     io.out.device_access := device_access_reg
     io.out.ebreak := instEbreak && valid
+    val dpi_ebreak = Module(new EbreakDPI)
+    dpi_ebreak.io.enable := io.out.ebreak  // 触发 ebreak 时调用 C 函数
 }
