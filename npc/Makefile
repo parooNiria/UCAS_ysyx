@@ -1,4 +1,4 @@
-TOPNAME    = top
+TOPNAME    = ysyxSoCFull
 VERILATOR ?= verilator
 VERILATOR_ROOT := $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
 
@@ -21,7 +21,7 @@ endif
 BUILD_DIR = $(abspath ./build)
 OBJ_DIR   = $(BUILD_DIR)/obj_dir
 BIN       = $(BUILD_DIR)/$(TOPNAME)
-
+PERIP_DIR   := $(SOC_HOME)/perip
 # 包含 C++ 仿真文件 (从当前的sim_csrc、csrc中捕获)
 CSRCS = $(wildcard sim_csrc/*.cpp csrc/*.cpp sim_csrc/*.c)
 # svdpi scope APIs (svGetScopeFromName/svSetScope) are implemented here in Verilator.
@@ -29,14 +29,21 @@ CSRCS += $(VERILATOR_ROOT)/include/verilated_dpi.cpp
 # 包含 Scala 源码和构建脚本，用于判断是否需要重新生成 Verilog
 SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
 
+VSRCS =  $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
+VSRC += $(BUILD_DIR)/ysyxSoCFull.v
+VSRCS += $$(find $(PERIP_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 VERILATOR_FLAGS = \
-	--cc --exe --build -j 0 --trace-fst \
-	--top-module $(TOPNAME) \
- 	-Mdir $(OBJ_DIR) \
- 	-I$(BUILD_DIR) \
-	-CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)" \
-	-LDFLAGS "-lcapstone -ldl"
-
+  -Wno-PINMISSING \
+  --cc --exe --build -j 0 --trace-fst \
+  --top-module $(TOPNAME) \
+  -Mdir $(OBJ_DIR) \
+  -I$(PERIP_DIR)/uart16550/rtl \
+  -I$(PERIP_DIR)/spi/rtl \
+  -I$(BUILD_DIR) \
+  --timescale "1ns/1ns" \
+  --no-timing \
+  -CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)" \
+  -LDFLAGS "-lcapstone -ldl"
 all: $(BIN)
 
 test:
@@ -52,7 +59,7 @@ verilog: $(BUILD_DIR)/.verilog_stamp
 
 $(BIN): $(BUILD_DIR)/.verilog_stamp $(CSRCS)
 	@mkdir -p $(BUILD_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null) $(wildcard vsrc/*.v) $(CSRCS)
+	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
 	@rm -f $(BIN)
 	@cp $(OBJ_DIR)/V$(TOPNAME) $(BIN)
 

@@ -10,15 +10,24 @@ class EXU extends Module {
         val awaddr  = Output(UInt(32.W))
         val awvalid = Output(Bool())
         val awready = Input(Bool())
+        val awid    = Output(UInt(4.W))
+        val awlen   = Output(UInt(8.W))
+        val awsize  = Output(UInt(3.W))
+        val awburst = Output(UInt(2.W))
 
         val wdata  = Output(UInt(32.W))
         val wstrb  = Output(UInt(4.W))
         val wvalid = Output(Bool())
         val wready = Input(Bool())
+        val wlast  = Output(Bool())
 
         val araddr  = Output(UInt(32.W))
         val arvalid = Output(Bool())
         val arready = Input(Bool())
+        val arid    = Output(UInt(4.W))
+        val arlen   = Output(UInt(8.W))
+        val arsize  = Output(UInt(3.W))
+        val arburst = Output(UInt(2.W))
     })
     
     val inst_reg = Reg(UInt(32.W))
@@ -67,7 +76,7 @@ class EXU extends Module {
     val is_sb = mem_en_LS_Type_reg(4, 3) === "b10".U && func3 === "b000".U
     val is_sh = mem_en_LS_Type_reg(4, 3) === "b10".U && func3 === "b001".U
     val is_sw = mem_en_LS_Type_reg(4, 3) === "b10".U && func3 === "b010".U
-    val addr = Cat(alu.io.alu_result(31, 2), 0.U(2.W))
+    val addr = alu.io.alu_result
     val addr_low = alu.io.alu_result(1, 0)
     val sb_mask = MuxLookup(addr_low, "b1000".U(8.W))(Seq(
         "b00".U -> "b0001".U(8.W),
@@ -119,6 +128,17 @@ class EXU extends Module {
     }
     io.araddr := addr
     io.arvalid := (state_read === sReadReq) && valid
+    io.arid := 1.U
+    io.arlen := 0.U
+    val is_lb = func3 === "b000".U
+    val is_lh = func3 === "b001".U
+    val is_lw = func3 === "b010".U
+    val is_lbu = func3 === "b100".U
+    val is_lhu = func3 === "b101".U
+    io.arsize := Mux(is_lb || is_lbu, 0.U, 
+                    Mux(is_lh || is_lhu, 1.U, 
+                        Mux(is_lw, 2.U, 0.U)))
+    io.arburst := 1.U // INCR
     
     val aw_handshake = io.awvalid && io.awready
     val w_handshake = io.wvalid && io.wready
@@ -177,10 +197,16 @@ class EXU extends Module {
     }
     io.awaddr := addr
     io.awvalid := (state_write === sWriteReq) || (state_write === sWriteAddr)
+    io.awid := 1.U
+    io.awlen := 0.U
+    io.awsize := Mux(is_sb, 0.U,
+                    Mux(is_sh, 1.U,
+                        Mux(is_sw, 2.U, 0.U)))
+    io.awburst := 1.U // INCR
     io.wdata := write_data
     io.wstrb := wmask_val
     io.wvalid := (state_write === sWriteReq) || (state_write === sWriteData)
-    io.araddr := alu.io.alu_result
+    io.wlast := state_write === sWriteData || state_write === sWriteAddr || (state_write === sWriteReq )
     io.arvalid := (state_read === sReadReq)
     
     io.out.valid := valid && (!mem_en_reg || 

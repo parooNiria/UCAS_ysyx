@@ -9,6 +9,7 @@
 #include "include/trace.h"
 #include <vector>
 #include <getopt.h>
+#include <assert.h>
 #define ANSI_COLOR_GREEN   "\033[32m"
 #define ANSI_COLOR_YELLOW  "\033[33m"
 #define ANSI_COLOR_CYAN    "\033[36m"
@@ -99,8 +100,11 @@ static int parse_args(int argc, char *argv[]) {
       return 0;
 }
 
+extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
+extern "C" void mrom_read(int32_t addr, int32_t *data) { assert(0); }
+
 int main(int argc, char** argv) {
-  
+Verilated::commandArgs(argc, argv);
   parse_args(argc, argv);
   if (image_file == NULL) {
       printf("Error: No IMAGE file specified.\n");
@@ -115,7 +119,6 @@ int main(int argc, char** argv) {
       printf("Usage: %s [IMAGE] [REF] [OPTIONS...]\n", argv[0]);
       exit(1);
   }
-
 
 
   VerilatedContext* contextp = new VerilatedContext;

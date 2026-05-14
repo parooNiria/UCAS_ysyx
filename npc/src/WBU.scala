@@ -69,4 +69,5 @@ class WBU extends Module {
     io.out.reg_write_data := Mux(reg_csr_en_dest_reg(6), csr.io.csr_rdata, reg_write_data_reg)
     io.out.commit_valid := valid
     io.out.device_access := device_access_reg
+    io.out.ebreak := instEbreak && valid
 }

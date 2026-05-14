@@ -6,14 +6,19 @@ import chisel3.util._
 class IFU extends Module {
   val io = IO(new Bundle {
     val out = Decoupled(new MessageIF)
-    val if_axi = new AXI4Lite
+    val if_axi = new AXI4Bundle
     val commit_info = Flipped(new CommitUpdate)
   })
     //写通道总是拉为0
     io.if_axi.awaddr := 0.U
     io.if_axi.awvalid := false.B
+    io.if_axi.awid := 0.U
+    io.if_axi.awlen := 0.U
+    io.if_axi.awsize := 0.U
+    io.if_axi.awburst := 0.U
     io.if_axi.wdata := 0.U
     io.if_axi.wstrb := 0.U
+    io.if_axi.wlast := false.B
     io.if_axi.wvalid := false.B
     io.if_axi.bready := false.B
 
@@ -25,7 +30,7 @@ class IFU extends Module {
     val sIdle :: sReq :: sWait :: Nil = Enum(3)
     val state = RegInit(sIdle)
     val rReq_handshake = io.if_axi.arvalid && io.if_axi.arready
-    val rResp_handshake = io.if_axi.rvalid && io.if_axi.rready
+    val rResp_handshake = io.if_axi.rvalid && io.if_axi.rready && io.if_axi.rid === 0.U && io.if_axi.rlast
     when (valid) {
         switch (state) {
             is (sIdle) {
@@ -56,6 +61,10 @@ class IFU extends Module {
     }
     io.if_axi.araddr := pc
     io.if_axi.arvalid := (state === sIdle) && valid
+    io.if_axi.arid := 0.U
+    io.if_axi.arlen := 0.U
+    io.if_axi.arsize := 2.U // 4 bytes
+    io.if_axi.arburst := 1.U // INCR
     io.if_axi.rready := (state === sReq) && valid
     val handshake_fd = RegInit(false.B)
     when (io.out.valid && io.out.ready) {

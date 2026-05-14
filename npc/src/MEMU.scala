@@ -11,10 +11,13 @@ class MEMU extends Module {
         val rresp  = Input(UInt(2.W))
         val rvalid = Input(Bool())
         val rready = Output(Bool())
+        val rlast  = Input(Bool())
+        val rid    = Input(UInt(4.W))
         
         val bresp  = Input(UInt(2.W))
         val bvalid = Input(Bool())
         val bready = Output(Bool())
+        val bid    = Input(UInt(4.W))
     })
 
     val valid = RegInit(false.B)
@@ -56,28 +59,29 @@ class MEMU extends Module {
     val is_lw = is_load && func3 === "b010".U
     val is_lbu = is_load && func3 === "b100".U
     val is_lhu = is_load && func3 === "b101".U
-
+    val rdata_recieve = io.rvalid && io.rid === 1.U && io.rlast
+    val bresp_recieve = io.bvalid && io.bid === 1.U
     val load_already_saved = RegInit(false.B)
     val load_data = Reg(UInt(32.W))
-    when (is_load && io.rvalid) {
+    when (is_load && rdata_recieve) {
         load_data := io.rdata
     }
     when (handshake_mw) {
         load_already_saved := false.B
-    } .elsewhen(is_load && io.rvalid) {
+    } .elsewhen(is_load && rdata_recieve) {
         load_already_saved := true.B
     } 
 
     val store_already_responded = RegInit(false.B)
     when (handshake_mw) {
         store_already_responded := false.B
-    } .elsewhen(is_store && io.bvalid && io.bresp === 0.U) {
+    } .elsewhen(is_store && bresp_recieve && io.bresp === 0.U) {
         store_already_responded := true.B
     }
 
     io.rready := is_load && !load_already_saved
     io.bready := is_store && !store_already_responded
-    io.out.valid := valid && (!mem_en || (is_load && (io.rvalid || load_already_saved)) || (is_store && io.bvalid && io.bresp === 0.U))
+    io.out.valid := valid && (!mem_en || (is_load && (rdata_recieve || load_already_saved)) || (is_store && bresp_recieve && io.bresp === 0.U))
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg
     io.out.bits.next_branch_pc := next_branch_pc_reg

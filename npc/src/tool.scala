@@ -67,28 +67,66 @@ class CommitInfo extends Bundle {
     val reg_we_en = Output(Bool())
     val commit_valid = Output(Bool())
     val device_access = Output(Bool())
+    val ebreak = Output(Bool())
 }
 
-class AXI4Lite extends Bundle {
+// class AXI4Lite extends Bundle {
+//     val awaddr  = Output(UInt(32.W))
+//     val awvalid = Output(Bool())
+//     val awready = Input(Bool())
+
+//     val wdata  = Output(UInt(32.W))
+//     val wstrb  = Output(UInt(4.W))
+//     val wvalid = Output(Bool())
+//     val wready = Input(Bool())
+
+//     val bresp  = Input(UInt(2.W))
+//     val bvalid = Input(Bool())
+//     val bready = Output(Bool())
+
+//     val araddr  = Output(UInt(32.W))
+//     val arvalid = Output(Bool())
+//     val arready = Input(Bool())
+
+//     val rdata  = Input(UInt(32.W))
+//     val rresp  = Input(UInt(2.W))
+//     val rvalid = Input(Bool())
+//     val rready = Output(Bool())
+// }
+//暂时不使用了
+
+class AXI4Bundle extends Bundle {
     val awaddr  = Output(UInt(32.W))
     val awvalid = Output(Bool())
     val awready = Input(Bool())
+    val awid    = Output(UInt(4.W))
+    val awlen   = Output(UInt(8.W))
+    val awsize  = Output(UInt(3.W))
+    val awburst = Output(UInt(2.W))
 
     val wdata  = Output(UInt(32.W))
     val wstrb  = Output(UInt(4.W))
     val wvalid = Output(Bool())
     val wready = Input(Bool())
+    val wlast  = Output(Bool())
 
     val bresp  = Input(UInt(2.W))
     val bvalid = Input(Bool())
     val bready = Output(Bool())
+    val bid    = Input(UInt(4.W))
 
     val araddr  = Output(UInt(32.W))
     val arvalid = Output(Bool())
     val arready = Input(Bool())
+    val arid    = Output(UInt(4.W))
+    val arlen   = Output(UInt(8.W))
+    val arsize  = Output(UInt(3.W))
+    val arburst = Output(UInt(2.W))
 
     val rdata  = Input(UInt(32.W))
     val rresp  = Input(UInt(2.W))
     val rvalid = Input(Bool())
     val rready = Output(Bool())
+    val rlast  = Input(Bool())
+    val rid    = Input(UInt(4.W))
 }

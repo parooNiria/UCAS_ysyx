@@ -5,8 +5,9 @@ import chisel3.util._
 
 class cpu extends Module {
   val io = IO(new Bundle {
-    val axi_if = new AXI4Lite
-    val axi_mem = new AXI4Lite
+    val axi_if = new AXI4Bundle
+    val axi_mem = new AXI4Bundle
+    val interrupt = Input(Bool())
 
     val pc = Output(UInt(32.W))
     val inst = Output(UInt(32.W))
@@ -49,25 +50,40 @@ class cpu extends Module {
   io.axi_mem.awaddr := exu.io.awaddr
   io.axi_mem.awvalid := exu.io.awvalid
   exu.io.awready := io.axi_mem.awready
+  io.axi_mem.awid := exu.io.awid
+  io.axi_mem.awlen := exu.io.awlen
+  io.axi_mem.awsize := exu.io.awsize
+  io.axi_mem.awburst := exu.io.awburst
+
   io.axi_mem.wdata := exu.io.wdata
   io.axi_mem.wstrb := exu.io.wstrb
   io.axi_mem.wvalid := exu.io.wvalid
   exu.io.wready := io.axi_mem.wready
+  io.axi_mem.wlast := exu.io.wlast
+
   io.axi_mem.araddr := exu.io.araddr
   io.axi_mem.arvalid := exu.io.arvalid
   exu.io.arready := io.axi_mem.arready
+  io.axi_mem.arid := exu.io.arid
+  io.axi_mem.arlen := exu.io.arlen
+  io.axi_mem.arsize := exu.io.arsize
+  io.axi_mem.arburst := exu.io.arburst
 
   memu.io.rdata := io.axi_mem.rdata
   memu.io.rresp := io.axi_mem.rresp
   memu.io.rvalid := io.axi_mem.rvalid
+  memu.io.rlast := io.axi_mem.rlast
+  memu.io.rid := io.axi_mem.rid
   io.axi_mem.rready := memu.io.rready
+
   memu.io.bresp := io.axi_mem.bresp
   memu.io.bvalid := io.axi_mem.bvalid
+  memu.io.bid := io.axi_mem.bid
   io.axi_mem.bready := memu.io.bready
 
   io.pc := wbu.io.out.next_pc
   io.inst := wbu.io.out.inst
-  io.ebreak := idu.io.out.valid && idu.io.out.bits.sys_message(1)
+  io.ebreak := wbu.io.out.ebreak
   io.commit_valid := wbu.io.out.commit_valid
   io.device_access := wbu.io.out.device_access
   io.dbg_rf := rf.io.rf_dbg
