@@ -21,9 +21,31 @@
 
 __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n, bool direction) {
   if (direction == DIFFTEST_TO_REF) {
-    memcpy(guest_to_host(addr), buf, n);
+    // Handle different memory regions
+    if (in_mrom(addr)) {
+      uint8_t* mrom_host = mrom_get_host();
+      memcpy(mrom_host + (addr - MROM_BASE), buf, n);
+    } else if (in_sram(addr)) {
+      uint8_t* sram_host = sram_get_host();
+      memcpy(sram_host + (addr - SRAM_BASE), buf, n);
+    } else if (in_pmem(addr)) {
+      memcpy(guest_to_host(addr), buf, n);
+    } else {
+      panic("difftest_memcpy: address " FMT_PADDR " out of bounds", addr);
+    }
   } else {
-    memcpy(buf, guest_to_host(addr), n);
+    // DIFFTEST_TO_DUT
+    if (in_mrom(addr)) {
+      uint8_t* mrom_host = mrom_get_host();
+      memcpy(buf, mrom_host + (addr - MROM_BASE), n);
+    } else if (in_sram(addr)) {
+      uint8_t* sram_host = sram_get_host();
+      memcpy(buf, sram_host + (addr - SRAM_BASE), n);
+    } else if (in_pmem(addr)) {
+      memcpy(buf, guest_to_host(addr), n);
+    } else {
+      panic("difftest_memcpy: address " FMT_PADDR " out of bounds", addr);
+    }
   }
 }
 

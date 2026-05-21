@@ -41,7 +41,7 @@ VERILATOR_FLAGS = \
   -I$(BUILD_DIR) \
   --timescale "1ns/1ns" \
   --no-timing \
-  -CFLAGS "-std=c++17 -O2 -DPMEM_BASE=$(PMEM_BASE) -DPMEM_SIZE=$(PMEM_SIZE)" \
+  -CFLAGS "-std=c++17 -O2 " \
   -LDFLAGS "-lcapstone -ldl"
 all: $(BIN)
 
