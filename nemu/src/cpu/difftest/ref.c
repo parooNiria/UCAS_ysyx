@@ -18,6 +18,7 @@
 #include <difftest-def.h>
 #include <memory/paddr.h>
 #include <string.h>
+void init_log(const char *log_file);
 
 __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n, bool direction) {
   if (direction == DIFFTEST_TO_REF) {
@@ -68,6 +69,9 @@ __EXPORT void difftest_raise_intr(word_t NO) {
 __EXPORT void difftest_init(int port) {
   void init_mem();
   init_mem();
+  // #ifdef CONFIG_MTRACE
+  // init_log("memtrace.log");
+  // #endif
   /* Perform ISA dependent initialization. */
   init_isa();
 }

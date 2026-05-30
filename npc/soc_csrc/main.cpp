@@ -24,7 +24,9 @@ int main(int argc, char** argv) {
     printf(COLOR_GREEN "[PASS] Simulation finished successfully." COLOR_RESET "\n");
   } else if(exit_code == 1){
     printf(COLOR_RED "[FAIL] Simulation finished with (a0 != 0)." COLOR_RESET "\n");
-  }else {
+  }else if(exit_code == 2){
+    printf(COLOR_RED "[FAIL] Simulation timed out." COLOR_RESET "\n");
+  } else{
     printf(COLOR_RED "[FAIL] Simulation ended unexpectedly." COLOR_RESET "\n");
   }
   // Cleanup

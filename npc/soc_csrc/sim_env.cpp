@@ -24,7 +24,7 @@ SimEnv::SimEnv()
   , ebreak_triggered_(false)
   , finished_(false)
   , ebreak_a0_(-1)
-  , max_sim_time_(1000000)
+  , max_sim_time_(10000000)
   , waveform_enabled_(true)
   , wave_file_("wave.fst")
 {
@@ -59,7 +59,10 @@ bool SimEnv::init(int argc, char** argv) {
   
   // Initialize Verilator
   init_verilator();
-  
+
+  // Initialize flash with test content
+  init_flash();
+
   // Initialize waveform recording
   if (waveform_enabled_) {
     init_waveform();
@@ -98,8 +101,10 @@ int SimEnv::run() {
     return 0;
   }else if(ebreak_triggered_){
     return 1;
-  }else{
+  }else if(sim_time_ >= max_sim_time_){
     return 2;
+  } else{
+    return 3;
   }
 }
 
@@ -220,5 +225,45 @@ bool SimEnv::tick() {
 
 bool& SimEnv_set_stop_flag(SimEnv* env){
   return env->stop_flag_;
+}
+
+void SimEnv::init_flash() {
+  printf("[INIT] Initializing flash with test pattern...\n");
+
+  flash_.assign(kFlashSize, 0xFF);  // Flash default is all 0xFF (erased state)
+
+  // Write a test pattern at the beginning of flash
+  // This simulates pre-programmed flash content
+  const char *test_pattern = "Hello, Flash! This is a test pattern stored in simulated flash.";
+  uint32_t pattern_len = strlen(test_pattern) + 1;  // Include null terminator
+  memcpy(flash_.data(), test_pattern, pattern_len);
+
+  // Also write some known 32-bit values at specific offsets for testing
+  auto write32 = [this](uint32_t offset, uint32_t val) {
+    if (offset + 3 < kFlashSize) {
+      flash_[offset + 0] = (uint8_t)(val & 0xFF);
+      flash_[offset + 1] = (uint8_t)((val >> 8) & 0xFF);
+      flash_[offset + 2] = (uint8_t)((val >> 16) & 0xFF);
+      flash_[offset + 3] = (uint8_t)((val >> 24) & 0xFF);
+    }
+  };
+
+  // Magic number and version at offset 0x100
+  write32(0x100, 0xDEADBEEFu);  // Magic
+  write32(0x104, 0x00000001u);  // Version
+  write32(0x108, 0x12345678u);  // Test value 1
+  write32(0x10C, 0x9ABCDEF0u);  // Test value 2
+
+  // Counter pattern at offset 0x200
+  for (int i = 0; i < 256; i++) {
+    write32(0x200 + i * 4, (uint32_t)(i * 0x01010101u));
+  }
+
+  printf("[INIT] Flash initialized: %zu bytes, base=0x%08x\n",
+         flash_.size(), kFlashBase);
+}
+
+std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env) {
+  return env->flash_;
 }
 

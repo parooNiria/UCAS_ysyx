@@ -43,8 +43,10 @@ public:
   void sync_mrom(uint32_t addr, const void *buf, size_t size);
   
   // Step: NEMU executes one instruction and compare with NPC
+  // device_type: non-zero means this instruction accessed a device/peripheral
+  //   that NEMU doesn't model — skip comparison and sync NPC->NEMU instead
   // Returns: true if no error, false if mismatch detected
-  bool step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc);
+  bool step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc, int device_type);
   
   // Check if DiffTest is enabled
   bool is_enabled() const { return enabled_; }

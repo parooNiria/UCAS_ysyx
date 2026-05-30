@@ -86,7 +86,7 @@ void DiffTest::sync_mrom(uint32_t addr, const void *buf, size_t size) {
   printf("[DIFFTEST] Synced MROM to NEMU (%zu bytes)\n", size);
 }
 
-bool DiffTest::step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc) {
+bool DiffTest::step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc, int device_type) {
   if (!enabled_) {
     return true;  // No error if disabled
   }
@@ -94,24 +94,34 @@ bool DiffTest::step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc) {
   // Itrace: log the committed instruction
   log_itrace(last_pc, inst, false, false);
 
-  // Step 1: NEMU executes one instruction
+  // Device access: NEMU doesn't model peripherals (UART, SPI, GPIO, etc.)
+  // Skip comparison and sync NPC's register state to NEMU
+  if (device_type) {
+    // Sync NPC register state to NEMU so they stay consistent
+    // NEMU does NOT execute this instruction — we just overwrite its state
+    nemu_difftest_regcpy_((void*)&npc_regs, DIFFTEST_TO_REF);
+    inst_count_++;
+    return true;
+  }
+
+  // Normal path: NEMU executes one instruction
   nemu_difftest_exec_(1);
-  
+
   // Step 2: Read NEMU register state
   RiscvRegs nemu_regs;
   memset(&nemu_regs, 0, sizeof(nemu_regs));
   nemu_difftest_regcpy_(&nemu_regs, DIFFTEST_TO_DUT);
-  
+
   // Step 3: Compare NPC and NEMU state
   inst_count_++;
   bool match = compare_regs(npc_regs, nemu_regs, inst, last_pc);
-  
+
   if (!match) {
     has_error_ = true;
     display_error_state(npc_regs, nemu_regs, inst, last_pc);
     return false;
   }
-  
+
   return true;
 }
 
@@ -119,28 +129,28 @@ bool DiffTest::compare_regs(const RiscvRegs &npc, const RiscvRegs &nemu,int last
   bool match = true;
   for (int i = 0; i < 32; i++) {
     if (npc.gpr[i] != nemu.gpr[i]) {
-      printf("GPR[%02d] differ! NPC=0x%08x, NEMU=0x%08x\n", i, npc.gpr[i], nemu.gpr[i]);
+      printf(COLOR_RED "[DIFFTEST_ERROR] GPR[%02d] differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, i, npc.gpr[i], nemu.gpr[i]);
       match = false;
     }
   }
   if (npc.pc != nemu.pc) {
-    printf("NPC differ! NPC=0x%08x, NEMU=0x%08x\n", npc.pc, nemu.pc);
+    printf(COLOR_RED "[DIFFTEST_ERROR] NPC differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, npc.pc, nemu.pc);
     match = false;
   }
   if (npc.mstatus != nemu.mstatus) {
-    printf("mstatus differ! NPC=0x%08x, NEMU=0x%08x\n", npc.mstatus, nemu.mstatus);
+    printf(COLOR_RED "[DIFFTEST_ERROR] mstatus differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, npc.mstatus, nemu.mstatus);
     match = false;
   }
   if (npc.mtvec != nemu.mtvec) {
-    printf("mtvec differ! NPC=0x%08x, NEMU=0x%08x\n", npc.mtvec, nemu.mtvec);
+    printf(COLOR_RED "[DIFFTEST_ERROR] mtvec differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, npc.mtvec, nemu.mtvec);
     match = false;
   }
   if (npc.mepc != nemu.mepc) {
-    printf("mepc differ! NPC=0x%08x, NEMU=0x%08x\n", npc.mepc, nemu.mepc);
+    printf(COLOR_RED "[DIFFTEST_ERROR] mepc differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, npc.mepc, nemu.mepc);
     match = false;
   }
   if (npc.mcause != nemu.mcause) {
-    printf("mcause differ! NPC=0x%08x, NEMU=0x%08x\n", npc.mcause, nemu.mcause);
+    printf(COLOR_RED "[DIFFTEST_ERROR] mcause differ! NPC=0x%08x, NEMU=0x%08x\n" COLOR_RESET, npc.mcause, nemu.mcause);
     match = false;
   } 
   if(!match) {

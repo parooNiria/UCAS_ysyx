@@ -188,6 +188,9 @@ void paddr_write(paddr_t addr, int len, word_t data) {
 #endif
     return;
   }
+  if (likely(in_uart_space(addr))) {
+    return;
+  }
 
 #ifdef CONFIG_DEVICE
   mmio_write(addr, len, data);

@@ -19,6 +19,7 @@ class SimEnv {
   friend int& SimEnv_get_ebreak_a0(SimEnv* env);
   friend std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
   friend bool& SimEnv_set_stop_flag(SimEnv* env);
+  friend std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
   
 public:
   SimEnv();
@@ -34,6 +35,7 @@ public:
 private:
   // Memory management
   bool load_mrom_image(const char *path);
+  void init_flash();
   
   // Verilator simulation
   void init_verilator();
@@ -55,6 +57,11 @@ private:
   // Memory
   std::vector<uint8_t> mrom_image_;
   bool mrom_loaded_;
+
+  // Flash storage (simulated SPI NOR flash)
+  std::vector<uint8_t> flash_;
+  static constexpr uint32_t kFlashBase = 0x00000000u;
+  static constexpr uint32_t kFlashSize = 0x01000000u;  // 16MB
   
   // DiffTest
   DiffTest* difftest_;
@@ -78,5 +85,6 @@ bool& SimEnv_get_ebreak_triggered(SimEnv* env);
 int& SimEnv_get_ebreak_a0(SimEnv* env);
 std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
 bool& SimEnv_set_stop_flag(SimEnv* env);
+std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
 
 #endif // __SIM_ENV_H__

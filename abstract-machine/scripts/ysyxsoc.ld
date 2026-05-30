@@ -14,23 +14,27 @@ SECTIONS {
   etext = .;
   _etext = .;
 
-  .rodata : {
+  .rodata : ALIGN(4) {
     *(.rodata*)
+    *(.srodata*)
   } > MROM
 
-  .data : {
+  .data : ALIGN(4) {
     _sdata = .;
     *(.data*)
+    *(.sdata*)
+    . = ALIGN(4);
     _edata = .;
   } > SRAM AT> MROM
   _sidata = LOADADDR(.data);
 
-  .bss : {
+  .bss : ALIGN(4) {
     _bss_start = .;
     _sbss = .;
     *(.bss*)
     *(.sbss*)
     *(.scommon)
+    . = ALIGN(4);
     _ebss = .;
   } > SRAM
 

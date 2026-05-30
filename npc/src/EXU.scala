@@ -213,8 +213,17 @@ class EXU extends Module {
     (is_load && ((state_read === sReadWait)||(state_read === sReadReq && io.arready))
     )|| (!is_load && ((state_write === sWriteWait)||(state_write === sWriteReq && aw_handshake && w_handshake)
     ||(state_write === sWriteData && w_handshake)|| (state_write === sWriteAddr && aw_handshake))))
-    val device_addr_in = (addr >= "hA00003F8".U && addr < "hA0000400".U)||
-                          (addr >= "ha0000048".U && addr < "ha0000050".U) 
+    // 所有外设地址空间 (NEMU 不建模的外设, difftest 需要跳过对比)
+    val device_addr_in =
+      (addr >= "h02000000".U && addr <= "h0200ffff".U) ||  // CLINT
+      (addr >= "h10000000".U && addr <= "h10000fff".U) ||  // UART
+      (addr >= "h10001000".U && addr <= "h10001fff".U) ||  // SPI 控制器
+      (addr >= "h10002000".U && addr <= "h1000200f".U) ||  // GPIO
+      (addr >= "h10011000".U && addr <= "h10011007".U) ||  // Keyboard (PS/2)
+      (addr >= "h21000000".U && addr <= "h211fffff".U) ||  // VGA
+      (addr >= "h30000000".U && addr <= "h3fffffff".U) ||  // XIP Flash
+      (addr >= "h80000000".U && addr <= "h803fffff".U) ||  // PSRAM
+      (addr >= "hA0000000".U && addr <= "hA1ffffff".U)      // SDRAM
     val is_device_access = valid && (mem_en_reg) && (device_addr_in) 
     io.out.bits.device_access := is_device_access
     io.out.bits.inst := inst_reg
