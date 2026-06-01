@@ -1,8 +1,8 @@
 AM_SRCS := riscv/ysyxsoc/start.S \
            riscv/ysyxsoc/trm.c \
-#            riscv/ysyxsoc/ioe.c \
+            riscv/ysyxsoc/ioe.c \
+			riscv/ysyxsoc/timer.c \
 # 		    riscv/ysyxsoc/uart.c \
-#            riscv/ysyxsoc/timer.c \
 #            riscv/ysyxsoc/input.c \
            riscv/ysyxsoc/uart.c \
 #            riscv/ysyxsoc/cte.c \
@@ -11,7 +11,7 @@ AM_SRCS := riscv/ysyxsoc/start.S \
 #            platform/dummy/mpe.c
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc.ld
+LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc-xip.ld
 LDFLAGS   += --defsym=_pmem_start=0x20000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
 

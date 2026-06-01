@@ -43,7 +43,7 @@ void log_itrace(uint32_t pc, uint32_t inst, bool print_to_term, bool force_print
   cs_insn *insn;
   size_t count = cs_disasm(capstone_handle, (const uint8_t *)&inst, 4, pc, 0, &insn);
   
-  char buf[128];
+  char buf[256];
   
   if (count > 0) {
     snprintf(buf, sizeof(buf), "pc: 0x%08x | inst: 0x%08x | %s\t%s", 

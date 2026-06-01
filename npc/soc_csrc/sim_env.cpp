@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <getopt.h>
 
 // Color definitions for output
 #define COLOR_GREEN "\033[32m"
@@ -17,14 +18,13 @@ SimEnv::SimEnv()
   : contextp_(NULL)
   , top_(NULL)
   , tfp_(NULL)
-  , mrom_loaded_(false)
   , difftest_(NULL)
   , difftest_enabled_(false)
   , sim_time_(0)
   , ebreak_triggered_(false)
   , finished_(false)
   , ebreak_a0_(-1)
-  , max_sim_time_(10000000)
+  , max_sim_time_(100000000)
   , waveform_enabled_(true)
   , wave_file_("wave.fst")
 {
@@ -41,41 +41,91 @@ SimEnv::~SimEnv() {
 //初始化
 bool SimEnv::init(int argc, char** argv) {
   printf(COLOR_CYAN "[INIT] Initializing simulation environment..." COLOR_RESET "\n");
-  
+
   // Initialize itrace system
   if (!init_trace()) {
     printf(COLOR_RED "[ERROR] Failed to initialize trace system" COLOR_RESET "\n");
     return false;
   }
-  
-  // Determine MROM image path
-  const char *mrom_path = (argc > 1) ? argv[1] : "/root/UCAS_ysyx/npc/test_csrc/char-test.bin";
-  
-  // Load MROM image
-  if (!load_mrom_image(mrom_path)) {
-    printf(COLOR_RED "[ERROR] Failed to load MROM image" COLOR_RESET "\n");
+
+  // --- Parse command-line arguments ---
+  const char *img_path   = "/root/UCAS_ysyx/npc/test_csrc/char-test.bin";
+  bool no_diff  = false;
+  bool no_wave  = false;
+  bool no_limit = false;
+
+  const struct option long_options[] = {
+    {"no-diff",   no_argument, NULL, 'd'},
+    {"no-wave",   no_argument, NULL, 'w'},
+    {"no-limit",  no_argument, NULL, 'l'},
+    {"help",      no_argument, NULL, 'h'},
+    {0, 0, 0, 0}
+  };
+  const char *optstring = "-dwlh";
+
+  int opt;
+  while ((opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
+    switch (opt) {
+      case 'd':
+        no_diff = true;
+        printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable differential testing (DiffTest)\n");
+        break;
+      case 'w':
+        no_wave = true;
+        printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable waveform recording\n");
+        break;
+      case 'l':
+        no_limit = true;
+        printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable max cycle limit\n");
+        break;
+      case 1:  // non-option argument → image path
+        img_path = optarg;
+        break;
+      case 'h':
+      case '?':
+      default:
+        printf("Usage: %s [IMAGE] [OPTIONS...]\n", argv[0]);
+        printf(COLOR_CYAN "Arguments:\n" COLOR_RESET);
+        printf("  IMAGE            Binary image to load into flash\n");
+        printf(COLOR_CYAN "Options:\n" COLOR_RESET);
+        printf("  --no-diff        Disable differential testing\n");
+        printf("  --no-wave        Disable waveform recording\n");
+        printf("  --no-limit       Disable max cycle limit\n");
+        printf("  -h, --help       Display this help\n");
+        return false;
+    }
+  }
+
+  if (no_limit) {
+    max_sim_time_ = UINT64_MAX;
+  }
+
+  // Initialize flash (erased state 0xFF), then load boot image at offset 0
+  init_flash();
+
+  // Load boot image into SPI flash at offset 0 (CPU boots from 0x30000000 via XIP)
+  if (!load_flash_image(img_path, 0)) {
+    printf(COLOR_RED "[ERROR] Failed to load flash boot image" COLOR_RESET "\n");
     return false;
   }
-  
+
   // Initialize Verilator
   init_verilator();
 
-  // Initialize flash with test content
-  init_flash();
-
-  // Initialize waveform recording
-  if (waveform_enabled_) {
+  // Initialize waveform recording (skip if --no-wave)
+  if (waveform_enabled_ && !no_wave) {
     init_waveform();
   }
-  
-  // Initialize DiffTest with NEMU
-  const char *nemu_so = "/root/UCAS_ysyx/nemu/build/riscv32-nemu-interpreter-so";
-  if (difftest_->init(nemu_so)) {
-    // Sync MROM to NEMU
-    difftest_->sync_mrom(kMromBase, mrom_image_.data(), mrom_image_.size());
-    difftest_enabled_ = true;
+
+  // Initialize DiffTest with NEMU (skip if --no-diff)
+  if (!no_diff) {
+    const char *nemu_so = "/root/UCAS_ysyx/nemu/build/riscv32-nemu-interpreter-so";
+    if (difftest_->init(nemu_so)) {
+      difftest_->sync_mrom(kFlashXipBase, flash_.data(), flash_.size());
+      difftest_enabled_ = true;
+    }
   }
-  
+
   // Perform reset
   do_reset(10);
   printf( COLOR_CYAN "[INIT] Initialization complete" COLOR_RESET"\n");
@@ -86,17 +136,17 @@ bool SimEnv::init(int argc, char** argv) {
 //运行仿真
 int SimEnv::run() {
   printf("[INIT] Starting simulation...\n");
-  
+
   while (!contextp_->gotFinish() && sim_time_ < max_sim_time_) {
     if (!tick()) {
       break;
     }
-    
+
     if(ebreak_triggered_){
       break;
-    } 
+    }
   }
-  
+
   if(ebreak_triggered_ && ebreak_a0_ == 0){
     return 0;
   }else if(ebreak_triggered_){
@@ -111,63 +161,34 @@ int SimEnv::run() {
 void SimEnv::cleanup() {
   // Close trace system
   close_trace();
-  
+
   if (tfp_) {
     tfp_->flush();
     tfp_->close();
     delete tfp_;
     tfp_ = NULL;
   }
-  
+
   if (top_) {
     top_->final();
     delete top_;
     top_ = NULL;
   }
-  
+
   if (contextp_) {
     delete contextp_;
     contextp_ = NULL;
   }
 }
 
-bool SimEnv::load_mrom_image(const char *path) {
-  FILE *fp = fopen(path, "rb");
-  if (!fp) {
-    perror("fopen mrom image");
-    return false;
-  }
-  
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  rewind(fp);
-  
-  if (size < 0 || size > static_cast<long>(kMromSize)) {
-    fprintf(stderr, "[ERROR] MROM image too large: %ld bytes (max 0x%x)\n",
-            size, kMromSize);
-    fclose(fp);
-    return false;
-  }
-  
-  mrom_image_.assign(kMromSize, 0);
-  size_t ret = fread(mrom_image_.data(), 1, static_cast<size_t>(size), fp);
-  (void)ret;
-  fclose(fp);
-  
-  mrom_loaded_ = true;
-  printf("[INIT] Load MROM image: %s, size=%ld, base=0x%08x\n", 
-         path, size, kMromBase);
-  return true;
-}
-
 void SimEnv::init_verilator() {
   contextp_ = new VerilatedContext;
-  
+
   // Enable trace before creating top
   contextp_->traceEverOn(true);
-  
+
   top_ = new VysyxSoCFull(contextp_);
-  
+
   // Initialize signals
   top_->clock = 0;
   top_->reset = 1;
@@ -176,21 +197,21 @@ void SimEnv::init_verilator() {
 void SimEnv::init_waveform() {
   tfp_ = new VerilatedFstC;
   top_->trace(tfp_, 99);
-  
+
   tfp_->open(wave_file_.c_str());
   printf("[INIT] Waveform recording enabled: %s\n", wave_file_.c_str());
 }
 
 void SimEnv::do_reset(int cycles) {
   printf("[INIT] Performing reset (%d cycles)...\n", cycles);
-  
+
   top_->reset = 1;
   for (int i = 0; i < cycles; ++i) {
     top_->clock = 0;
     top_->eval();
     if (tfp_) tfp_->dump(contextp_->time());
     contextp_->timeInc(1);
-    
+
     top_->clock = 1;
     top_->eval();
     if (tfp_) tfp_->dump(contextp_->time());
@@ -205,20 +226,20 @@ bool SimEnv::tick() {
   top_->eval();
   if (tfp_) tfp_->dump(contextp_->time());
   contextp_->timeInc(1);
-  
+
   // Falling edge
   top_->clock = 1;
   top_->eval();
   if (tfp_) tfp_->dump(contextp_->time());
   contextp_->timeInc(1);
-  
+
   sim_time_ = contextp_->time();
-  
+
   // Check for ebreak
   if (stop_flag_) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -227,43 +248,41 @@ bool& SimEnv_set_stop_flag(SimEnv* env){
   return env->stop_flag_;
 }
 
-void SimEnv::init_flash() {
-  printf("[INIT] Initializing flash with test pattern...\n");
-
-  flash_.assign(kFlashSize, 0xFF);  // Flash default is all 0xFF (erased state)
-
-  // Write a test pattern at the beginning of flash
-  // This simulates pre-programmed flash content
-  const char *test_pattern = "Hello, Flash! This is a test pattern stored in simulated flash.";
-  uint32_t pattern_len = strlen(test_pattern) + 1;  // Include null terminator
-  memcpy(flash_.data(), test_pattern, pattern_len);
-
-  // Also write some known 32-bit values at specific offsets for testing
-  auto write32 = [this](uint32_t offset, uint32_t val) {
-    if (offset + 3 < kFlashSize) {
-      flash_[offset + 0] = (uint8_t)(val & 0xFF);
-      flash_[offset + 1] = (uint8_t)((val >> 8) & 0xFF);
-      flash_[offset + 2] = (uint8_t)((val >> 16) & 0xFF);
-      flash_[offset + 3] = (uint8_t)((val >> 24) & 0xFF);
-    }
-  };
-
-  // Magic number and version at offset 0x100
-  write32(0x100, 0xDEADBEEFu);  // Magic
-  write32(0x104, 0x00000001u);  // Version
-  write32(0x108, 0x12345678u);  // Test value 1
-  write32(0x10C, 0x9ABCDEF0u);  // Test value 2
-
-  // Counter pattern at offset 0x200
-  for (int i = 0; i < 256; i++) {
-    write32(0x200 + i * 4, (uint32_t)(i * 0x01010101u));
+bool SimEnv::load_flash_image(const char *path, uint32_t offset) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) {
+    perror("fopen flash image");
+    return false;
   }
 
-  printf("[INIT] Flash initialized: %zu bytes, base=0x%08x\n",
-         flash_.size(), kFlashBase);
+  fseek(fp, 0, SEEK_END);
+  long size = ftell(fp);
+  rewind(fp);
+
+  if (size <= 0 || (uint32_t)(offset + size) > kFlashSize) {
+    fprintf(stderr, "[ERROR] Flash image too large: %ld bytes (offset 0x%x, max 0x%x)\n",
+            size, offset, kFlashSize);
+    fclose(fp);
+    return false;
+  }
+
+  size_t ret = fread(flash_.data() + offset, 1, static_cast<size_t>(size), fp);
+  (void)ret;
+  fclose(fp);
+
+  printf("[INIT] Loaded flash boot image: %s, size=%ld, XIP addr=0x%08x\n",
+         path, size, kFlashXipBase + offset);
+  return true;
+}
+
+void SimEnv::init_flash() {
+  // Initialize flash: all 0xFF (erased state), then load_flash_image()
+  // overwrites the beginning with the boot image.
+  flash_.assign(kFlashSize, 0xFF);
+  printf("[INIT] Flash initialized: %zu bytes, XIP base=0x%08x\n",
+         flash_.size(), kFlashXipBase);
 }
 
 std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env) {
   return env->flash_;
 }
-

@@ -44,8 +44,8 @@ void halt(int code) {
   }
 }
 
-void _trm_init() {
-  /*
+void uart_init() {
+    /*
    * UART16550 Initialization
    *
    * Baud rate formula:  divisor = clk_freq / (baud_rate * 16)
@@ -63,7 +63,16 @@ void _trm_init() {
 
   // Step 3: Clear DLAB, set 8 data bits, no parity, 1 stop bit (8N1)
   outb(SERIAL_PORT + UART_REG_LCR, UART_LCR_8N1);
+}
 
+void _trm_init() {
+  
+  uart_init();
+  uint32_t vendor, arch;
+  asm volatile("csrr %0, 0xF11" : "=r"(vendor));
+  asm volatile("csrr %0, 0xF12" : "=r"(arch));
+  printf("mvendorid = 0x%08x\n", vendor);
+  printf("marchid   = 0x%08x\n", arch);
   int ret = main(mainargs);
   halt(ret);
 }

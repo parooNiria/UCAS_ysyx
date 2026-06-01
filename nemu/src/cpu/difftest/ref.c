@@ -23,9 +23,9 @@ void init_log(const char *log_file);
 __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n, bool direction) {
   if (direction == DIFFTEST_TO_REF) {
     // Handle different memory regions
-    if (in_mrom(addr)) {
-      uint8_t* mrom_host = mrom_get_host();
-      memcpy(mrom_host + (addr - MROM_BASE), buf, n);
+    if (in_flash(addr)) {
+      uint8_t* flash_host = flash_get_host();
+      memcpy(flash_host + (addr - FLASH_BASE), buf, n);
     } else if (in_sram(addr)) {
       uint8_t* sram_host = sram_get_host();
       memcpy(sram_host + (addr - SRAM_BASE), buf, n);
@@ -36,9 +36,9 @@ __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n, bool direction)
     }
   } else {
     // DIFFTEST_TO_DUT
-    if (in_mrom(addr)) {
-      uint8_t* mrom_host = mrom_get_host();
-      memcpy(buf, mrom_host + (addr - MROM_BASE), n);
+    if (in_flash(addr)) {
+      uint8_t* flash_host = flash_get_host();
+      memcpy(buf, flash_host + (addr - FLASH_BASE), n);
     } else if (in_sram(addr)) {
       uint8_t* sram_host = sram_get_host();
       memcpy(buf, sram_host + (addr - SRAM_BASE), n);

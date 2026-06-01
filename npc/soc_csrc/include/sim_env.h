@@ -34,7 +34,7 @@ public:
 
 private:
   // Memory management
-  bool load_mrom_image(const char *path);
+  bool load_flash_image(const char *path, uint32_t offset);
   void init_flash();
   
   // Verilator simulation
@@ -54,14 +54,14 @@ private:
   VysyxSoCFull* top_;
   VerilatedFstC* tfp_;
   
-  // Memory
+  // Memory (MROM kept for DPI callback compatibility with AXI4MROM HW)
   std::vector<uint8_t> mrom_image_;
-  bool mrom_loaded_;
 
-  // Flash storage (simulated SPI NOR flash)
+  // Flash storage (simulated SPI NOR flash) — primary boot device via XIP
   std::vector<uint8_t> flash_;
   static constexpr uint32_t kFlashBase = 0x00000000u;
   static constexpr uint32_t kFlashSize = 0x01000000u;  // 16MB
+  static constexpr uint32_t kFlashXipBase = 0x30000000u;  // XIP address in SoC
   
   // DiffTest
   DiffTest* difftest_;
@@ -75,7 +75,7 @@ private:
   bool stop_flag_;
   
   // Configuration
-  int max_sim_time_;
+  uint64_t max_sim_time_;
   bool waveform_enabled_;
   std::string wave_file_;
 };

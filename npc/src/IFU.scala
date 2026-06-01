@@ -51,7 +51,7 @@ class IFU extends Module {
         }
     }
 
-    val pc = RegInit("h20000000".U(32.W))
+    val pc = RegInit("h30000000".U(32.W))   // boot from SPI flash via XIP
     when(valid && io.commit_info.commit_valid) {
         pc := io.commit_info.next_pc
     }

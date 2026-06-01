@@ -92,8 +92,8 @@ class MEMU extends Module {
                     Mux(alu_result_reg(1, 0) === "b10".U, rdata(23, 16),
                     Mux(alu_result_reg(1, 0) === "b11".U, rdata(31, 24), 0.U))))
     val read_data_h = Mux(alu_result_reg(1) === 0.U, rdata(15, 0), rdata(31, 16))
-    val read_data = Mux(is_lb, Cat(Fill(24, rdata(7)),read_data_b),
-                    Mux(is_lh, Cat(Fill(16, rdata(15)), read_data_h),
+    val read_data = Mux(is_lb, Cat(Fill(24, read_data_b(7)),read_data_b),
+                    Mux(is_lh, Cat(Fill(16, read_data_h(15)), read_data_h),
                     Mux(is_lw, rdata,
                     Mux(is_lbu, Cat(Fill(24, 0.U), read_data_b),
                     Mux(is_lhu, Cat(Fill(16, 0.U), read_data_h), 0.U)))))

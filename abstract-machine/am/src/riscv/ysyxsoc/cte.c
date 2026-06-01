@@ -1,38 +1,115 @@
 #include <am.h>
-#include <klib-macros.h>
+#include <riscv/riscv.h>
+#include <klib.h>
 
-void __am_timer_init();
-void __am_uart_config(AM_UART_CONFIG_T *cfg);
-void __am_uart_tx(AM_UART_TX_T *uart);
-void __am_uart_rx(AM_UART_RX_T *uart);
+static Context* (*user_handler)(Event, Context*) = NULL;
 
-void __am_timer_rtc(AM_TIMER_RTC_T *);
-void __am_timer_uptime(AM_TIMER_UPTIME_T *);
-void __am_input_keybrd(AM_INPUT_KEYBRD_T *);
+static void __am_panic_on_return() {
+  assert("kernel context returns");
+}
 
-static void __am_timer_config(AM_TIMER_CONFIG_T *cfg) { cfg->present = true; cfg->has_rtc = true; }
-static void __am_input_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = true;  }
+typedef struct {
+  void (*entry)(void *);
+  void *arg;
+} __am_kcontext_boot_t;
 
-typedef void (*handler_t)(void *buf);
-static void *lut[128] = {
-  [AM_TIMER_CONFIG] = __am_timer_config,
-  [AM_TIMER_RTC   ] = __am_timer_rtc,
-  [AM_TIMER_UPTIME] = __am_timer_uptime,
-  [AM_INPUT_CONFIG] = __am_input_config,
-  [AM_INPUT_KEYBRD] = __am_input_keybrd,
-  [AM_UART_CONFIG] = __am_uart_config,
-  [AM_UART_TX    ] = __am_uart_tx,
-  [AM_UART_RX    ] = __am_uart_rx,
-};
+static void __am_kcontext_bootstrap(void *opaque) {
+  __am_kcontext_boot_t *boot = (__am_kcontext_boot_t *)opaque;
+  boot->entry(boot->arg);
+  __am_panic_on_return();
+}
 
-static void fail(void *buf) { panic("access nonexist register"); }
+Context* __am_irq_handle(Context *c) {
+  if (user_handler) {
+    Event ev = {0};
+    switch (c->mcause) {
+      case 11:
+        ev.event =  EVENT_YIELD;
+        c->mepc += 4;
+        break;
+      default: 
+      printf("Unhandled mcause: %lu \n", c->mcause); 
+      ev.event = EVENT_ERROR; break;
+    }
 
-bool ioe_init() {
-  for (int i = 0; i < LENGTH(lut); i++)
-    if (!lut[i]) lut[i] = fail;
-  __am_timer_init();
+    c = user_handler(ev, c);
+    assert(c != NULL);
+  }
+
+  return c;
+}
+
+extern void __am_asm_trap(void);
+
+bool cte_init(Context*(*handler)(Event, Context*)) {
+  // initialize exception entry
+  asm volatile("csrw mtvec, %0" : : "r"(__am_asm_trap));
+
+  // register event handler
+  user_handler = handler;
+
   return true;
 }
 
-void ioe_read (int reg, void *buf) { ((handler_t)lut[reg])(buf); }
-void ioe_write(int reg, void *buf) { ((handler_t)lut[reg])(buf); }
+Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
+  uintptr_t top = (uintptr_t)kstack.end;
+  top &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
+
+  uintptr_t ctx_addr = top - sizeof(Context);
+  ctx_addr &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
+  Context *ctx = (Context *)ctx_addr;
+
+  uintptr_t boot_addr = ctx_addr - sizeof(__am_kcontext_boot_t);
+  boot_addr &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
+  __am_kcontext_boot_t *boot = (__am_kcontext_boot_t *)boot_addr;
+
+  if (kstack.start != NULL) {
+    assert(boot_addr >= (uintptr_t)kstack.start);
+  }
+
+  boot->entry = entry;
+  boot->arg = arg;
+
+  *ctx = (Context){0};
+
+  uintptr_t mstatus = 0;
+  asm volatile("csrr %0, mstatus" : "=r"(mstatus));
+
+  // Ensure mret returns to M-mode and enables interrupt from MPIE.
+  const uintptr_t MSTATUS_MPP = (uintptr_t)(3u << 11);
+  const uintptr_t MSTATUS_MPIE = (uintptr_t)(1u << 7);
+  mstatus = (mstatus & ~((uintptr_t)(3u << 11))) | MSTATUS_MPP | MSTATUS_MPIE;
+
+  ctx->mstatus = mstatus;
+  ctx->mepc = (uintptr_t)__am_kcontext_bootstrap;
+  ctx->mcause = 0;
+  ctx->pdir = NULL;
+
+  // a0 = stack-resident bootstrap record, ra = panic handler if bootstrap returns
+  ctx->gpr[10] = (uintptr_t)boot;
+  ctx->gpr[1] = (uintptr_t)__am_panic_on_return;
+
+  return ctx;
+}
+
+void yield() {
+#ifdef __riscv_e
+  asm volatile("li a5, -1; ecall");
+#else
+  asm volatile("li a7, -1; ecall");
+#endif
+}
+
+bool ienabled() {
+  uintptr_t mstatus = 0;
+  asm volatile("csrr %0, mstatus" : "=r"(mstatus));
+  return (mstatus & (uintptr_t)(1u << 3)) != 0;
+}
+
+void iset(bool enable) {
+  if (enable) {
+    asm volatile("csrsi mstatus, 0x8");
+  } else {
+    asm volatile("csrci mstatus, 0x8");
+  }
+}

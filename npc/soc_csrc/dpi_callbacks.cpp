@@ -25,7 +25,7 @@ extern "C" void dpi_commit(int dbg_mstatus, int dbg_mtvec, int dbg_mepc, int dbg
     int dbg_rf7, int dbg_rf8, int dbg_rf9, int dbg_rf10, int dbg_rf11, int dbg_rf12, int dbg_rf13, int dbg_rf14, int dbg_rf15,
     int dbg_rf16, int dbg_rf17, int dbg_rf18, int dbg_rf19, int dbg_rf20, int dbg_rf21, int dbg_rf22, int dbg_rf23, int dbg_rf24, int dbg_rf25, int dbg_rf26, int dbg_rf27, int dbg_rf28, int dbg_rf29, int dbg_rf30, int dbg_rf31,
     int last_inst,int next_pc,int last_pc, int device_type) {
-      if (g_Difftest && g_Difftest->is_enabled()) {
+      if (g_Difftest) {
     RiscvRegs npc_regs;
     npc_regs.gpr[0] = dbg_rf0;
     npc_regs.gpr[1] = dbg_rf1;

@@ -39,7 +39,7 @@ public:
   // Cleanup resources
   void cleanup();
   
-  // Sync MROM content to NEMU
+  // Sync memory content to NEMU (flash, MROM, etc.)
   void sync_mrom(uint32_t addr, const void *buf, size_t size);
   
   // Step: NEMU executes one instruction and compare with NPC

@@ -43,6 +43,7 @@ VERILATOR_FLAGS = \
   --no-timing \
   -CFLAGS "-std=c++17 -O2 " \
   -LDFLAGS "-lcapstone -ldl"
+RUN_FLAGS = 
 all: $(BIN)
 
 test:
@@ -67,7 +68,7 @@ run: $(BIN)
 		echo "Usage: make run IMG=/path/to/image.bin [BIN_BASE=0x80000000] [PMEM_BASE=0x80000000]"; \
 		exit 1; \
 	fi
-	$(BIN) $(IMG) 
+	$(BIN) $(IMG) $(RUN_FLAGS)
 
 sim: $(BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!

@@ -28,31 +28,31 @@ static uint8_t *pmem = NULL;
 static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #endif
 
-// MROM and SRAM memory regions
-static uint8_t mrom[MROM_SIZE] PG_ALIGN = {};
+// Flash (XIP boot) and SRAM memory regions
+static uint8_t flash[FLASH_SIZE] PG_ALIGN = {};
 static uint8_t sram[SRAM_SIZE] PG_ALIGN = {};
 
 uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
 paddr_t host_to_guest(uint8_t *haddr) { return haddr - pmem + CONFIG_MBASE; }
 
-// MROM and SRAM host access functions
-uint8_t* mrom_get_host(void) { return mrom; }
+// Flash and SRAM host access functions
+uint8_t* flash_get_host(void) { return flash; }
 uint8_t* sram_get_host(void) { return sram; }
 
-void mrom_sync_from_host(const void *data, size_t size) {
-  assert(size <= MROM_SIZE);
-  memcpy(mrom, data, size);
-  Log("Synced MROM with %zu bytes", size);
+void flash_sync_from_host(const void *data, size_t size) {
+  assert(size <= FLASH_SIZE);
+  memcpy(flash, data, size);
+  Log("Synced flash with %zu bytes", size);
 }
 
-static word_t mrom_read(paddr_t addr, int len) {
-  word_t ret = host_read(mrom + addr - MROM_BASE, len);
+static word_t flash_read(paddr_t addr, int len) {
+  word_t ret = host_read(flash + addr - FLASH_BASE, len);
   return ret;
 }
 
-static void mrom_write(paddr_t addr, int len, word_t data) {
-  // MROM is read-only, ignore writes
-  Log("Warning: Write to MROM at " FMT_PADDR " ignored", addr);
+static void flash_write(paddr_t addr, int len, word_t data) {
+  // Flash is read-only via XIP, ignore writes
+  Log("Warning: Write to flash at " FMT_PADDR " ignored", addr);
 }
 
 static word_t sram_read(paddr_t addr, int len) {
@@ -115,21 +115,16 @@ void init_mem() {
   pmem = malloc(CONFIG_MSIZE);
   assert(pmem);
 #endif
-  memset(mrom, 0, MROM_SIZE);
+  memset(flash, 0, FLASH_SIZE);
   memset(sram, 0, SRAM_SIZE);
   IFDEF(CONFIG_MEM_RANDOM, memset(pmem, rand(), CONFIG_MSIZE));
-  // Log("physical memory area [" FMT_PADDR ", " FMT_PADDR "]", PMEM_LEFT, PMEM_RIGHT);
-  // Log("mrom area [" FMT_PADDR ", " FMT_PADDR "]", (paddr_t)MROM_BASE, 
-  //     (paddr_t)(MROM_BASE + MROM_SIZE - 1));
-  // Log("sram area [" FMT_PADDR ", " FMT_PADDR "]", (paddr_t)SRAM_BASE,
-  //     (paddr_t)(SRAM_BASE + SRAM_SIZE - 1));
 }
 
 word_t paddr_read(paddr_t addr, int len) {
   word_t ret = 0;
 
-  if (likely(in_mrom(addr))) {
-    ret = mrom_read(addr, len);
+  if (likely(in_flash(addr))) {
+    ret = flash_read(addr, len);
 #ifdef CONFIG_MTRACE
     mtrace_read_log(addr, len, ret);
 #endif
@@ -165,8 +160,8 @@ word_t paddr_read(paddr_t addr, int len) {
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
-  if (likely(in_mrom(addr))) {
-    mrom_write(addr, len, data);
+  if (likely(in_flash(addr))) {
+    flash_write(addr, len, data);
 #ifdef CONFIG_MTRACE
     mtrace_write_log(addr, len, data);
 #endif

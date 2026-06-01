@@ -221,7 +221,6 @@ class EXU extends Module {
       (addr >= "h10002000".U && addr <= "h1000200f".U) ||  // GPIO
       (addr >= "h10011000".U && addr <= "h10011007".U) ||  // Keyboard (PS/2)
       (addr >= "h21000000".U && addr <= "h211fffff".U) ||  // VGA
-      (addr >= "h30000000".U && addr <= "h3fffffff".U) ||  // XIP Flash
       (addr >= "h80000000".U && addr <= "h803fffff".U) ||  // PSRAM
       (addr >= "hA0000000".U && addr <= "hA1ffffff".U)      // SDRAM
     val is_device_access = valid && (mem_en_reg) && (device_addr_in) 

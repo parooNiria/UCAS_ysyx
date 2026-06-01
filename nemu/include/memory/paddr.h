@@ -22,9 +22,9 @@
 #define PMEM_RIGHT ((paddr_t)CONFIG_MBASE + CONFIG_MSIZE - 1)
 #define RESET_VECTOR (PMEM_LEFT + CONFIG_PC_RESET_OFFSET)
 
-// MROM and SRAM address space definitions
-#define MROM_BASE  ((paddr_t)0x20000000)
-#define MROM_SIZE  ((paddr_t)0x1000)
+// Flash XIP address space (replaces MROM as boot device)
+#define FLASH_BASE  ((paddr_t)0x30000000)
+#define FLASH_SIZE  ((paddr_t)0x1000000)  // 16MB flash
 #define SRAM_BASE  ((paddr_t)0x0f000000)
 #define SRAM_SIZE  ((paddr_t)0x2000)
 #define UART_BASE  ((paddr_t)0x10000000)
@@ -35,8 +35,8 @@ static inline bool in_pmem(paddr_t addr) {
   return addr - CONFIG_MBASE < CONFIG_MSIZE;
 }
 
-static inline bool in_mrom(paddr_t addr) {
-  return addr - MROM_BASE < MROM_SIZE;
+static inline bool in_flash(paddr_t addr) {
+  return addr - FLASH_BASE < FLASH_SIZE;
 }
 
 static inline bool in_sram(paddr_t addr) {
@@ -51,10 +51,10 @@ uint8_t* guest_to_host(paddr_t paddr);
 /* convert the host virtual address in NEMU to guest physical address in the guest program */
 paddr_t host_to_guest(uint8_t *haddr);
 
-// MROM and SRAM access functions
-uint8_t* mrom_get_host(void);
+// Flash and SRAM access functions
+uint8_t* flash_get_host(void);
 uint8_t* sram_get_host(void);
-void mrom_sync_from_host(const void *data, size_t size);
+void flash_sync_from_host(const void *data, size_t size);
 
 word_t paddr_read(paddr_t addr, int len);
 void paddr_write(paddr_t addr, int len, word_t data);

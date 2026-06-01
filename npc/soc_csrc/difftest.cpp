@@ -87,12 +87,12 @@ void DiffTest::sync_mrom(uint32_t addr, const void *buf, size_t size) {
 }
 
 bool DiffTest::step(const RiscvRegs &npc_regs, uint32_t inst, int last_pc, int device_type) {
+    // Itrace: log the committed instruction
+  log_itrace(last_pc, inst, false, false);
   if (!enabled_) {
     return true;  // No error if disabled
   }
 
-  // Itrace: log the committed instruction
-  log_itrace(last_pc, inst, false, false);
 
   // Device access: NEMU doesn't model peripherals (UART, SPI, GPIO, etc.)
   // Skip comparison and sync NPC's register state to NEMU
