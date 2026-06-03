@@ -28,12 +28,17 @@ std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
 // Set global SimEnv instance
 void set_sim_env_instance(SimEnv* env);
 void set_diff_test_instance(DiffTest* diff_test);
+
+// Memory trace (mtrace) — close log file on shutdown
+void mtrace_close();
   
 // DPI callback declarations (extern "C" for Verilator)
 extern "C" {
   void dpi_ebreak(int reg_a0);
   void mrom_read(int32_t addr, int32_t *data);
   void flash_read(int32_t addr, int32_t *data);
+  void psram_read(int32_t addr, int32_t *data);
+  void psram_write(int32_t addr, int32_t data, int32_t mask);
 }
 
 #endif // __DPI_CALLBACKS_H__

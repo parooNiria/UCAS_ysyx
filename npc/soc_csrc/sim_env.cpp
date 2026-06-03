@@ -24,7 +24,7 @@ SimEnv::SimEnv()
   , ebreak_triggered_(false)
   , finished_(false)
   , ebreak_a0_(-1)
-  , max_sim_time_(100000000)
+  , max_sim_time_(10000000)
   , waveform_enabled_(true)
   , wave_file_("wave.fst")
 {
@@ -103,6 +103,10 @@ bool SimEnv::init(int argc, char** argv) {
   // Initialize flash (erased state 0xFF), then load boot image at offset 0
   init_flash();
 
+  // Initialize PSRAM (cleared to zero)
+  psram_.assign(kPsramSize, 0);
+  printf("[INIT] PSRAM initialized: %zu bytes\n", psram_.size());
+
   // Load boot image into SPI flash at offset 0 (CPU boots from 0x30000000 via XIP)
   if (!load_flash_image(img_path, 0)) {
     printf(COLOR_RED "[ERROR] Failed to load flash boot image" COLOR_RESET "\n");
@@ -159,7 +163,8 @@ int SimEnv::run() {
 }
 
 void SimEnv::cleanup() {
-  // Close trace system
+  // Close trace systems
+  mtrace_close();
   close_trace();
 
   if (tfp_) {
@@ -285,4 +290,8 @@ void SimEnv::init_flash() {
 
 std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env) {
   return env->flash_;
+}
+
+std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env) {
+  return env->psram_;
 }

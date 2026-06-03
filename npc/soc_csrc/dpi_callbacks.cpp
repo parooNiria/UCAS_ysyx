@@ -1,10 +1,51 @@
 #include "include/dpi_callbacks.h"
 #include "include/difftest.h"
 #include <stdio.h>
+#include <string.h>
 #include "include/sim_env.h"
+
 // Global instance set by SimEnv
 static SimEnv* g_sim_env = NULL;
 static DiffTest* g_Difftest = NULL;
+
+// ---------------------------------------------------------------------------
+// Memory trace (mtrace) — logs DPI-C memory accesses
+// ---------------------------------------------------------------------------
+static FILE *mtrace_fp = NULL;
+
+static void mtrace_init() {
+  if (!mtrace_fp) {
+    mtrace_fp = fopen("build/npc-log-mtrace.txt", "w");
+  }
+}
+
+void mtrace_close() {
+  if (mtrace_fp) {
+    fclose(mtrace_fp);
+    mtrace_fp = NULL;
+  }
+}
+
+static void mtrace_wr(uint32_t addr, uint32_t data, uint32_t strb) {
+  mtrace_init();
+  if (!mtrace_fp) return;
+
+  uint64_t t = g_sim_env ? g_sim_env->sim_time() : 0;
+  int nbytes = __builtin_popcount(strb & 0xFu);
+  fprintf(mtrace_fp, "[%10llu] PSRAM wr  0x%08x <= 0x%08x  strb=0x%x  (%dB)\n",
+          (unsigned long long)t, addr, data, strb, nbytes);
+  fflush(mtrace_fp);
+}
+
+static void mtrace_rd(uint32_t addr, uint32_t data, int size) {
+  mtrace_init();
+  if (!mtrace_fp) return;
+
+  uint64_t t = g_sim_env ? g_sim_env->sim_time() : 0;
+  fprintf(mtrace_fp, "[%10llu] PSRAM rd  0x%08x => 0x%0*x  (%dB)\n",
+          (unsigned long long)t, addr, size * 2, data, size);
+  fflush(mtrace_fp);
+}
 
 // External accessor functions
 bool& SimEnv_get_ebreak_triggered(SimEnv* env) { return env->ebreak_triggered_; }
@@ -140,6 +181,41 @@ extern "C" void flash_read(int32_t addr, int32_t *data) {
     (flash[flash_addr + 2] << 16) |
     (flash[flash_addr + 3] << 24)
   );
+  // mtrace: FLASH is noisy during XIP boot; uncomment to debug flash reads
+  // mtrace_rd(static_cast<uint32_t>(addr), static_cast<uint32_t>(*data), 4);
+}
+
+// PSRAM read DPI callback
+extern "C" void psram_read(int32_t addr, int32_t *data) {
+  if (!g_sim_env || !data) {
+    *data = 0;
+    return;
+  }
+  std::vector<uint8_t>& psram = SimEnv_get_psram(g_sim_env);
+  uint32_t psram_addr = static_cast<uint32_t>(addr) & ~3;  // Align to 4 bytes
+  if (psram_addr + 3 < psram.size()) {
+    *data = (int32_t)(psram[psram_addr + 0] |
+                      (psram[psram_addr + 1] << 8) |
+                      (psram[psram_addr + 2] << 16) |
+                      (psram[psram_addr + 3] << 24));
+  } else {
+    *data = 0;
+  }
+  mtrace_rd(static_cast<uint32_t>(addr), static_cast<uint32_t>(*data), 4);
+}
+
+// PSRAM write DPI callback
+extern "C" void psram_write(int32_t addr, int32_t data, int32_t mask) {
+  if (!g_sim_env) return;
+  std::vector<uint8_t>& psram = SimEnv_get_psram(g_sim_env);
+  uint32_t psram_addr = static_cast<uint32_t>(addr) & ~3;
+  if (psram_addr + 3 < psram.size()) {
+    if (mask & 1) psram[psram_addr + 0] = (uint8_t)(data & 0xFF);
+    if (mask & 2) psram[psram_addr + 1] = (uint8_t)((data >> 8) & 0xFF);
+    if (mask & 4) psram[psram_addr + 2] = (uint8_t)((data >> 16) & 0xFF);
+    if (mask & 8) psram[psram_addr + 3] = (uint8_t)((data >> 24) & 0xFF);
+  }
+  mtrace_wr(static_cast<uint32_t>(addr), static_cast<uint32_t>(data), static_cast<uint32_t>(mask));
 }
 
 // Set global SimEnv instance

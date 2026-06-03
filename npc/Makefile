@@ -43,7 +43,7 @@ VERILATOR_FLAGS = \
   --no-timing \
   -CFLAGS "-std=c++17 -O2 " \
   -LDFLAGS "-lcapstone -ldl"
-RUN_FLAGS = 
+RUN_FLAGS = --no-limit
 all: $(BIN)
 
 test:

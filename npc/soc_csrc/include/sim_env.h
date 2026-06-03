@@ -20,6 +20,7 @@ class SimEnv {
   friend std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
   friend bool& SimEnv_set_stop_flag(SimEnv* env);
   friend std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
+  friend std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env);
   
 public:
   SimEnv();
@@ -49,6 +50,10 @@ private:
   bool check_ebreak();
   int get_exit_code() const;
 
+public:
+  // Simulation time accessor (for DPI-C mtrace)
+  uint64_t sim_time() const { return sim_time_; }
+
   // Verilator components
   VerilatedContext* contextp_;
   VysyxSoCFull* top_;
@@ -59,6 +64,10 @@ private:
 
   // Flash storage (simulated SPI NOR flash) — primary boot device via XIP
   std::vector<uint8_t> flash_;
+
+  // PSRAM storage (simulated QSPI PSRAM IS66WVS4M8ALL, 4MB)
+  std::vector<uint8_t> psram_;
+  static constexpr uint32_t kPsramSize = 0x00400000u;  // 4MB
   static constexpr uint32_t kFlashBase = 0x00000000u;
   static constexpr uint32_t kFlashSize = 0x01000000u;  // 16MB
   static constexpr uint32_t kFlashXipBase = 0x30000000u;  // XIP address in SoC
@@ -86,5 +95,6 @@ int& SimEnv_get_ebreak_a0(SimEnv* env);
 std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
 bool& SimEnv_set_stop_flag(SimEnv* env);
 std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
+std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env);
 
 #endif // __SIM_ENV_H__

@@ -71,8 +71,9 @@ void _trm_init() {
   uint32_t vendor, arch;
   asm volatile("csrr %0, 0xF11" : "=r"(vendor));
   asm volatile("csrr %0, 0xF12" : "=r"(arch));
-  printf("mvendorid = 0x%08x\n", vendor);
-  printf("marchid   = 0x%08x\n", arch);
+  for (const char *p = (const char *)&vendor + 3; p >= (const char *)&vendor; p--)
+    putch(*p);
+  printf("_%d\n", arch);
   int ret = main(mainargs);
   halt(ret);
 }
