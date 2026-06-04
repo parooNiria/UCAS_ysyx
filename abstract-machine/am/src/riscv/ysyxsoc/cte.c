@@ -13,6 +13,7 @@ typedef struct {
   void *arg;
 } __am_kcontext_boot_t;
 
+//构造上下文的引导函数
 static void __am_kcontext_bootstrap(void *opaque) {
   __am_kcontext_boot_t *boot = (__am_kcontext_boot_t *)opaque;
   boot->entry(boot->arg);
@@ -51,17 +52,21 @@ bool cte_init(Context*(*handler)(Event, Context*)) {
   return true;
 }
 
+//构建一个上下文
 Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
   uintptr_t top = (uintptr_t)kstack.end;
   top &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
+  //栈初始化
 
   uintptr_t ctx_addr = top - sizeof(Context);
   ctx_addr &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
   Context *ctx = (Context *)ctx_addr;
+  //留出上下文空间
 
   uintptr_t boot_addr = ctx_addr - sizeof(__am_kcontext_boot_t);
   boot_addr &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
   __am_kcontext_boot_t *boot = (__am_kcontext_boot_t *)boot_addr;
+//再流出引导记录空间
 
   if (kstack.start != NULL) {
     assert(boot_addr >= (uintptr_t)kstack.start);
@@ -88,7 +93,7 @@ Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
   // a0 = stack-resident bootstrap record, ra = panic handler if bootstrap returns
   ctx->gpr[10] = (uintptr_t)boot;
   ctx->gpr[1] = (uintptr_t)__am_panic_on_return;
-
+  //其实不太需要了..
   return ctx;
 }
 

@@ -2,6 +2,10 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            riscv/ysyxsoc/trm.c \
             riscv/ysyxsoc/ioe.c \
 			riscv/ysyxsoc/timer.c \
+			 riscv/ysyxsoc/cte.c \
+			 platform/dummy/vme.c \
+			 platform/dummy/mpe.c \
+			 riscv/ysyxsoc/trap.S \
 # 		    riscv/ysyxsoc/uart.c \
 #            riscv/ysyxsoc/input.c \
            riscv/ysyxsoc/uart.c \
@@ -11,8 +15,8 @@ AM_SRCS := riscv/ysyxsoc/start.S \
 #            platform/dummy/mpe.c
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc-xip.ld
-LDFLAGS   += --defsym=_pmem_start=0x20000000 --defsym=_entry_offset=0x0
+LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc-psram-run.ld
+LDFLAGS   += 
 LDFLAGS   += --gc-sections -e _start
 
 MAINARGS_MAX_LEN = 64
