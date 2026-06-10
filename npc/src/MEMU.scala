@@ -18,6 +18,10 @@ class MEMU extends Module {
         val bvalid = Input(Bool())
         val bready = Output(Bool())
         val bid    = Input(UInt(4.W))
+
+        // Performance counter events
+        val perf_load  = Output(Bool())  // load data received
+        val perf_store = Output(Bool())  // store response received
     })
 
     val valid = RegInit(false.B)
@@ -104,4 +108,8 @@ class MEMU extends Module {
     io.out.bits.sys_message := sys_message_reg
     io.in.ready := !valid || (io.out.valid && io.out.ready)
     io.out.bits.device_access := device_access_reg
+
+    // ── Performance counter events ──
+    io.perf_load  := is_load  && io.rvalid && io.rid === 1.U && io.rlast
+    io.perf_store := is_store && io.bvalid && io.bid === 1.U && io.bresp === 0.U
 }

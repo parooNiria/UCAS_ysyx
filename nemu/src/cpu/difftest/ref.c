@@ -22,27 +22,37 @@ void init_log(const char *log_file);
 
 __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n, bool direction) {
   if (direction == DIFFTEST_TO_REF) {
-    // Handle different memory regions
+#ifdef CONFIG_YSYXSOC
     if (in_flash(addr)) {
       uint8_t* flash_host = flash_get_host();
       memcpy(flash_host + (addr - FLASH_BASE), buf, n);
     } else if (in_sram(addr)) {
       uint8_t* sram_host = sram_get_host();
       memcpy(sram_host + (addr - SRAM_BASE), buf, n);
-    } else if (in_pmem(addr)) {
+    } else if (in_sdram(addr)) {
+      uint8_t* sdram_host = sdram_get_host();
+      memcpy(sdram_host + (addr - SDRAM_BASE), buf, n);
+    } else
+#endif
+    if (in_pmem(addr)) {
       memcpy(guest_to_host(addr), buf, n);
     } else {
       panic("difftest_memcpy: address " FMT_PADDR " out of bounds", addr);
     }
   } else {
-    // DIFFTEST_TO_DUT
+#ifdef CONFIG_YSYXSOC
     if (in_flash(addr)) {
       uint8_t* flash_host = flash_get_host();
       memcpy(buf, flash_host + (addr - FLASH_BASE), n);
     } else if (in_sram(addr)) {
       uint8_t* sram_host = sram_get_host();
       memcpy(buf, sram_host + (addr - SRAM_BASE), n);
-    } else if (in_pmem(addr)) {
+    } else if (in_sdram(addr)) {
+      uint8_t* sdram_host = sdram_get_host();
+      memcpy(buf, sdram_host + (addr - SDRAM_BASE), n);
+    } else
+#endif
+    if (in_pmem(addr)) {
       memcpy(buf, guest_to_host(addr), n);
     } else {
       panic("difftest_memcpy: address " FMT_PADDR " out of bounds", addr);

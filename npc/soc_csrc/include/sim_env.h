@@ -21,7 +21,8 @@ class SimEnv {
   friend bool& SimEnv_set_stop_flag(SimEnv* env);
   friend std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
   friend std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env);
-  
+  friend std::vector<uint8_t>& SimEnv_get_sdram(SimEnv* env);
+
 public:
   SimEnv();
   ~SimEnv();
@@ -67,7 +68,14 @@ public:
 
   // PSRAM storage (simulated QSPI PSRAM IS66WVS4M8ALL, 4MB)
   std::vector<uint8_t> psram_;
+  static constexpr uint32_t kPsramBase = 0x80000000u;  // PSRAM base address
   static constexpr uint32_t kPsramSize = 0x00400000u;  // 4MB
+
+  // SDRAM storage (simulated MT48LC16M16A2, 16M x 16 = 32MB)
+  // Internal DPI addr = {bank[1:0], row[12:0], col[8:0]} (24-bit word address)
+  std::vector<uint8_t> sdram_;
+  static constexpr uint32_t kSdramBase = 0xa0000000u;  // SDRAM base in SoC address space
+  static constexpr uint32_t kSdramSize = 0x02000000u;  // 32MB
   static constexpr uint32_t kFlashBase = 0x00000000u;
   static constexpr uint32_t kFlashSize = 0x01000000u;  // 16MB
   static constexpr uint32_t kFlashXipBase = 0x30000000u;  // XIP address in SoC
@@ -86,6 +94,7 @@ public:
   // Configuration
   uint64_t max_sim_time_;
   bool waveform_enabled_;
+  bool nvboard_enabled_;
   std::string wave_file_;
 };
 
@@ -96,5 +105,6 @@ std::vector<uint8_t>& SimEnv_get_mrom_image(SimEnv* env);
 bool& SimEnv_set_stop_flag(SimEnv* env);
 std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env);
 std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env);
+std::vector<uint8_t>& SimEnv_get_sdram(SimEnv* env);
 
 #endif // __SIM_ENV_H__

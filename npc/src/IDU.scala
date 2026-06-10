@@ -3,11 +3,24 @@ package npc
 import chisel3._
 import chisel3.util._
 
+// Performance counter events from IDU
+class IDUPerfEvents extends Bundle {
+    val compute = Bool()   // ALU / R-type / I-type / U-type / shift
+    val branch  = Bool()   // B-type
+    val jump    = Bool()   // JAL / JALR
+    val load    = Bool()   // load
+    val store   = Bool()   // store
+    val csr     = Bool()   // CSR
+    val system  = Bool()   // ECALL / EBREAK / MRET
+}
+
 class IDU extends Module {
     val io = IO(new Bundle {
         val in = Flipped(Decoupled(new MessageIF))
         val out = Decoupled(new MessageID)
         val rf_read = new rf_read
+        // Performance counter event outputs (pulsed on out.fire)
+        val perf_events = Output(new IDUPerfEvents)
     })
 
     val valid = RegInit(false.B)
@@ -207,4 +220,15 @@ class IDU extends Module {
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg
     io.in.ready := 1.B
+
+    // ── Performance counter events: pulse on out.fire ──
+    val idu_fire = io.out.valid && io.out.ready
+    io.perf_events.compute := idu_fire && is_val && !is_load && !is_store &&
+                               !is_b && !is_j && !is_sys && !is_csr
+    io.perf_events.branch  := idu_fire && is_b
+    io.perf_events.jump    := idu_fire && (is_j || inst_jalr)
+    io.perf_events.load    := idu_fire && is_load
+    io.perf_events.store   := idu_fire && is_store
+    io.perf_events.csr     := idu_fire && is_csr
+    io.perf_events.system  := idu_fire && is_sys
 }

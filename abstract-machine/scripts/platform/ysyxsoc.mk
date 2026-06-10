@@ -6,16 +6,16 @@ AM_SRCS := riscv/ysyxsoc/start.S \
 			 platform/dummy/vme.c \
 			 platform/dummy/mpe.c \
 			 riscv/ysyxsoc/trap.S \
-# 		    riscv/ysyxsoc/uart.c \
-#            riscv/ysyxsoc/input.c \
-           riscv/ysyxsoc/uart.c \
+ 		    riscv/ysyxsoc/uart.c \
+            riscv/ysyxsoc/input.c \
+	            riscv/ysyxsoc/gpu.c \
 #            riscv/ysyxsoc/cte.c \
 #            riscv/ysyxsoc/trap.S \
 #            platform/dummy/vme.c \
 #            platform/dummy/mpe.c
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc-psram-run.ld
+LDSCRIPTS += $(AM_HOME)/scripts/ysyxsoc-sdram.ld
 LDFLAGS   += 
 LDFLAGS   += --gc-sections -e _start
 

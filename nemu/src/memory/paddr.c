@@ -28,16 +28,21 @@ static uint8_t *pmem = NULL;
 static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #endif
 
-// Flash (XIP boot) and SRAM memory regions
+#ifdef CONFIG_YSYXSOC
+// Flash (XIP boot), SRAM, and SDRAM memory regions
 static uint8_t flash[FLASH_SIZE] PG_ALIGN = {};
 static uint8_t sram[SRAM_SIZE] PG_ALIGN = {};
+static uint8_t sdram[SDRAM_SIZE] PG_ALIGN = {};
+#endif
 
 uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
 paddr_t host_to_guest(uint8_t *haddr) { return haddr - pmem + CONFIG_MBASE; }
 
-// Flash and SRAM host access functions
+#ifdef CONFIG_YSYXSOC
+// Flash, SRAM, and SDRAM host access functions
 uint8_t* flash_get_host(void) { return flash; }
 uint8_t* sram_get_host(void) { return sram; }
+uint8_t* sdram_get_host(void) { return sdram; }
 
 void flash_sync_from_host(const void *data, size_t size) {
   assert(size <= FLASH_SIZE);
@@ -63,6 +68,16 @@ static word_t sram_read(paddr_t addr, int len) {
 static void sram_write(paddr_t addr, int len, word_t data) {
   host_write(sram + addr - SRAM_BASE, len, data);
 }
+
+static word_t sdram_read(paddr_t addr, int len) {
+  word_t ret = host_read(sdram + addr - SDRAM_BASE, len);
+  return ret;
+}
+
+static void sdram_write(paddr_t addr, int len, word_t data) {
+  host_write(sdram + addr - SDRAM_BASE, len, data);
+}
+#endif
 
 static word_t pmem_read(paddr_t addr, int len) {
   word_t ret = host_read(guest_to_host(addr), len);
@@ -115,14 +130,18 @@ void init_mem() {
   pmem = malloc(CONFIG_MSIZE);
   assert(pmem);
 #endif
+#ifdef CONFIG_YSYXSOC
   memset(flash, 0, FLASH_SIZE);
   memset(sram, 0, SRAM_SIZE);
+  memset(sdram, 0, SDRAM_SIZE);
+#endif
   IFDEF(CONFIG_MEM_RANDOM, memset(pmem, rand(), CONFIG_MSIZE));
 }
 
 word_t paddr_read(paddr_t addr, int len) {
   word_t ret = 0;
 
+#ifdef CONFIG_YSYXSOC
   if (likely(in_flash(addr))) {
     ret = flash_read(addr, len);
 #ifdef CONFIG_MTRACE
@@ -138,6 +157,15 @@ word_t paddr_read(paddr_t addr, int len) {
 #endif
     return ret;
   }
+
+  if (likely(in_sdram(addr))) {
+    ret = sdram_read(addr, len);
+#ifdef CONFIG_MTRACE
+    mtrace_read_log(addr, len, ret);
+#endif
+    return ret;
+  }
+#endif
 
   if (likely(in_pmem(addr))) {
     ret = pmem_read(addr, len);
@@ -160,6 +188,7 @@ word_t paddr_read(paddr_t addr, int len) {
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
+#ifdef CONFIG_YSYXSOC
   if (likely(in_flash(addr))) {
     flash_write(addr, len, data);
 #ifdef CONFIG_MTRACE
@@ -176,6 +205,15 @@ void paddr_write(paddr_t addr, int len, word_t data) {
     return;
   }
 
+  if (likely(in_sdram(addr))) {
+    sdram_write(addr, len, data);
+#ifdef CONFIG_MTRACE
+    mtrace_write_log(addr, len, data);
+#endif
+    return;
+  }
+#endif
+
   if (likely(in_pmem(addr))) {
     pmem_write(addr, len, data);
 #ifdef CONFIG_MTRACE
@@ -183,9 +221,11 @@ void paddr_write(paddr_t addr, int len, word_t data) {
 #endif
     return;
   }
+#ifdef CONFIG_YSYXSOC
   if (likely(in_uart_space(addr))) {
     return;
   }
+#endif
 
 #ifdef CONFIG_DEVICE
   mmio_write(addr, len, data);

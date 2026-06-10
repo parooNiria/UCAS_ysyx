@@ -7,6 +7,10 @@
 // Initialize trace system (capstone, log files)
 bool init_trace();
 
+// Disable itrace & mtrace (call before init_trace)
+void set_disable_trace(bool v);
+bool get_disable_trace();
+
 // Close trace system and cleanup resources
 void close_trace();
 

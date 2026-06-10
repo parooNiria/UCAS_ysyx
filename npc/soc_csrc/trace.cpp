@@ -11,8 +11,11 @@ static csh capstone_handle;
 static char recent_itrace[RECENT_ITRACE_SIZE][128];
 static int recent_itrace_idx = 0;
 
-// Control flags (can be modified by command line args in the future)
+// Control flags
 static int disable_itrace = 0;
+
+void set_disable_trace(bool v) { disable_itrace = v ? 1 : 0; }
+bool get_disable_trace()       { return disable_itrace != 0; }
 
 bool init_trace() {
   // Initialize Capstone for RISC-V 32-bit

@@ -3,11 +3,18 @@ package npc
 import chisel3._
 import chisel3.util._
 
+class IFUPerfStall extends Bundle {
+    val stall_ar = Bool()   // waiting for AXI AR ready
+    val stall_r  = Bool()   // waiting for AXI read data
+    val stall_bp = Bool()   // backpressure from downstream
+}
+
 class IFU extends Module {
   val io = IO(new Bundle {
     val out = Decoupled(new MessageIF)
     val if_axi = new AXI4Bundle
     val commit_info = Flipped(new CommitUpdate)
+    val perf_stall = Output(new IFUPerfStall)
   })
     //写通道总是拉为0
     io.if_axi.awaddr := 0.U
@@ -75,4 +82,9 @@ class IFU extends Module {
     io.out.valid := ((state === sWait)|| (state === sReq && io.if_axi.rvalid) )&& valid && !handshake_fd
     io.out.bits.pc := pc
     io.out.bits.inst := (Mux(state === sWait, inst_reg, io.if_axi.rdata))
+
+    // ── Performance counter: IFU stall reasons ──
+    io.perf_stall.stall_ar := valid && state === sIdle && !rReq_handshake
+    io.perf_stall.stall_r  := valid && state === sReq  && !rResp_handshake
+    io.perf_stall.stall_bp := valid && handshake_fd
 }

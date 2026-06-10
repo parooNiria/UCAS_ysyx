@@ -48,8 +48,8 @@ static struct rule {
   {"/", '/'},           // divide
   {"\\(", '('},         // left parenthese
   {"\\)", ')'},         // right parenthese
-  {"0[xX][0-9a-fA-F]+", TK_HNUM}, // hexadecimal number
-  {"[0-9]+", TK_DNUM},            // decimal number
+  {"0[xX][0-9a-fA-F]+u?", TK_HNUM}, // hexadecimal number
+  {"[0-9]+u?", TK_DNUM},            // decimal number
   {"\\$([A-Za-z0-9]+)", TK_REG}, // register, e.g. $x10/$a0
 };
 
@@ -97,7 +97,7 @@ static bool make_token(char *e) {
         char *substr_start = e + position;
         int substr_len = pmatch.rm_eo;
 
-        Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
+        log_write("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
             i, rules[i].regex, position, substr_len, substr_len, substr_start);
 
         position += substr_len;
@@ -217,68 +217,72 @@ static word_t eval_expr(int s, int e, bool *success) {
       *success = false;
       return 0;
     }
-    
+
     if(tokens[s].type == TK_REG) {
       return isa_reg_str2val(tokens[s].str, success);
     }
     *success = true;
     return strtoull(tokens[s].str, NULL, 0);
   }
-  else if(check_parentheses(s, e)) {
-    return eval_expr(s + 1, e - 1, success);
-  }
-  else if(tokens[s].type == TK_DEREF) {
-    word_t addr;
-    if(s+1<=e&&tokens[s+1].type == '(') {
-      int level = 1;
-      int i;
-      for(i = s+2; i <= e; i ++){
-        if(tokens[i].type == '(') level ++;
-        else if(tokens[i].type == ')') level --;
-        if(level == 0) break;
-      }
-      if(i > e) {
-        *success = false;
-        return 0;
-      }
-      addr = eval_expr(s + 1, i, success);
-      if (!*success) return 0;
-    }
-    else {
-      addr = eval_expr(s + 1, s + 1, success);
-      if (!*success) return 0;
-    }
-    return vaddr_read(addr, sizeof(word_t));
-  }
   else {
+    // Try binary ops first — this ensures deref is only evaluated
+    // when the entire [s, e] range is a pure *expr, e.g. *0x80000000
     int op_pos = op_sel(s, e);
-    if (op_pos < 0) {
-      *success = false;
-      return 0;
+    if (op_pos >= 0) {
+      word_t val1 = eval_expr(s, op_pos - 1, success);
+      if (!*success) return 0;
+      word_t val2 = eval_expr(op_pos + 1, e, success);
+      if (!*success) return 0;
+
+      *success = true;
+      switch (tokens[op_pos].type) {
+        case '+': return val1 + val2;
+        case '-': return val1 - val2;
+        case '*': return val1 * val2;
+        case '/':
+          if (val2 == 0) {
+            *success = false;
+            return 0;
+          }
+          return val1 / val2;
+        case TK_EQ: return val1 == val2;
+        case TK_NEQ: return val1 != val2;
+        case TK_AND: return (val1 != 0) && (val2 != 0);
+        default:
+          *success = false;
+          return 0;
+      }
     }
-
-    word_t val1 = eval_expr(s, op_pos - 1, success);
-    if (!*success) return 0;
-    word_t val2 = eval_expr(op_pos + 1, e, success);
-    if (!*success) return 0;
-
-    *success = true;
-    switch (tokens[op_pos].type) {
-      case '+': return val1 + val2;
-      case '-': return val1 - val2;
-      case '*': return val1 * val2;
-      case '/':
-        if (val2 == 0) {
+    else if(check_parentheses(s, e)) {
+      return eval_expr(s + 1, e - 1, success);
+    }
+    else if(tokens[s].type == TK_DEREF) {
+      word_t addr;
+      if(s+1<=e&&tokens[s+1].type == '(') {
+        int level = 1;
+        int i;
+        for(i = s+2; i <= e; i ++){
+          if(tokens[i].type == '(') level ++;
+          else if(tokens[i].type == ')') level --;
+          if(level == 0) break;
+        }
+        if(i > e) {
           *success = false;
           return 0;
         }
-        return val1 / val2;
-      case TK_EQ: return val1 == val2;
-      case TK_NEQ: return val1 != val2;
-      case TK_AND: return (val1 != 0) && (val2 != 0);
-      default:
-        *success = false;
-        return 0;
+        addr = eval_expr(s + 1, i, success);
+        if (!*success) return 0;
+      }
+      else {
+        addr = eval_expr(s + 1, s + 1, success);
+        if (!*success) return 0;
+      }
+      *success = true;
+      return vaddr_read(addr, sizeof(word_t));
+    }
+    else {
+      *success = false;
+      return 0;
     }
   }
 }

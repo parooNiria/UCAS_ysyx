@@ -28,6 +28,11 @@ class EXU extends Module {
         val arlen   = Output(UInt(8.W))
         val arsize  = Output(UInt(3.W))
         val arburst = Output(UInt(2.W))
+
+        // Performance counter events
+        val perf_compute     = Output(Bool())  // non-memory ALU done
+        val perf_load_issue  = Output(Bool())  // load instruction fired
+        val perf_store_issue = Output(Bool())  // store instruction fired
     })
     
     val inst_reg = Reg(UInt(32.W))
@@ -220,9 +225,7 @@ class EXU extends Module {
       (addr >= "h10001000".U && addr <= "h10001fff".U) ||  // SPI 控制器
       (addr >= "h10002000".U && addr <= "h1000200f".U) ||  // GPIO
       (addr >= "h10011000".U && addr <= "h10011007".U) ||  // Keyboard (PS/2)
-      (addr >= "h21000000".U && addr <= "h211fffff".U) ||  // VGA
-      (addr >= "h80000000".U && addr <= "h803fffff".U) ||  // PSRAM
-      (addr >= "hA0000000".U && addr <= "hA1ffffff".U)      // SDRAM
+      (addr >= "h21000000".U && addr <= "h211fffff".U)   // VGA
     val is_device_access = valid && (mem_en_reg) && (device_addr_in) 
     io.out.bits.device_access := is_device_access
     io.out.bits.inst := inst_reg
@@ -234,4 +237,10 @@ class EXU extends Module {
     io.out.bits.reg_csr_mem_en_dest := reg_csr_mem_en_dest_reg
     io.out.bits.sys_message := sys_message_reg
     io.in.ready := !valid || (io.out.valid && io.out.ready)
+
+    // ── Performance counter events ──
+    val exu_fire = io.out.valid && io.out.ready
+    io.perf_compute     := exu_fire && !mem_en_LS_Type_reg(4)
+    io.perf_load_issue  := exu_fire &&  mem_en_LS_Type_reg(4) &&  mem_en_LS_Type_reg(3)
+    io.perf_store_issue := exu_fire &&  mem_en_LS_Type_reg(4) && !mem_en_LS_Type_reg(3)
 }   

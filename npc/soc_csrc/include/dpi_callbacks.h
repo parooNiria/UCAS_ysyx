@@ -39,6 +39,8 @@ extern "C" {
   void flash_read(int32_t addr, int32_t *data);
   void psram_read(int32_t addr, int32_t *data);
   void psram_write(int32_t addr, int32_t data, int32_t mask);
+  void sdram_dpi_read(int addr, int *data);
+  void sdram_dpi_write(int addr, int data, int mask);
 }
 
 #endif // __DPI_CALLBACKS_H__

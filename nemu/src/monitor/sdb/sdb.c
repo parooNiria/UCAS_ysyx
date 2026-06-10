@@ -18,6 +18,7 @@
 #include <memory/vaddr.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <utils.h>
 #include "sdb.h"
 
 static int is_batch_mode = false;
@@ -71,6 +72,7 @@ static int cmd_info(char *args) {
 }
 
 static int cmd_q(char *args) {
+  set_nemu_state(NEMU_QUIT, cpu.pc, 0);
   return -1;
 }
 

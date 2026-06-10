@@ -1,5 +1,6 @@
 #include "include/dpi_callbacks.h"
 #include "include/difftest.h"
+#include "include/trace.h"
 #include <stdio.h>
 #include <string.h>
 #include "include/sim_env.h"
@@ -14,6 +15,7 @@ static DiffTest* g_Difftest = NULL;
 static FILE *mtrace_fp = NULL;
 
 static void mtrace_init() {
+  if (get_disable_trace()) return;
   if (!mtrace_fp) {
     mtrace_fp = fopen("build/npc-log-mtrace.txt", "w");
   }
@@ -44,6 +46,26 @@ static void mtrace_rd(uint32_t addr, uint32_t data, int size) {
   uint64_t t = g_sim_env ? g_sim_env->sim_time() : 0;
   fprintf(mtrace_fp, "[%10llu] PSRAM rd  0x%08x => 0x%0*x  (%dB)\n",
           (unsigned long long)t, addr, size * 2, data, size);
+  fflush(mtrace_fp);
+}
+
+// SDRAM-specific mtrace (16-bit word access, DQM-style mask)
+static void sdram_mtrace_rd(uint32_t addr, uint32_t data) {
+  mtrace_init();
+  if (!mtrace_fp) return;
+  uint64_t t = g_sim_env ? g_sim_env->sim_time() : 0;
+  fprintf(mtrace_fp, "[%10llu] SDRAM rd 0x%08x => 0x%04x  (2B)\n",
+          (unsigned long long)t, addr, data & 0xFFFF);
+  fflush(mtrace_fp);
+}
+
+static void sdram_mtrace_wr(uint32_t addr, uint32_t data, uint32_t strb) {
+  mtrace_init();
+  if (!mtrace_fp) return;
+  uint64_t t = g_sim_env ? g_sim_env->sim_time() : 0;
+  int nbytes = __builtin_popcount(strb & 0x3);
+  fprintf(mtrace_fp, "[%10llu] SDRAM wr 0x%08x <= 0x%04x  strb=0x%x  (%dB)\n",
+          (unsigned long long)t, addr, data & 0xFFFF, strb, nbytes);
   fflush(mtrace_fp);
 }
 
@@ -202,6 +224,45 @@ extern "C" void psram_read(int32_t addr, int32_t *data) {
     *data = 0;
   }
   mtrace_rd(static_cast<uint32_t>(addr), static_cast<uint32_t>(*data), 4);
+}
+
+// SDRAM read DPI callback
+// addr = {bank[1:0], row[12:0], col[8:0]} — 24-bit word address
+extern "C" void sdram_dpi_read(int addr, int *data) {
+  if (!g_sim_env || !data) {
+    *data = 0;
+    return;
+  }
+
+  std::vector<uint8_t>& sdram = SimEnv_get_sdram(g_sim_env);
+  // Convert word address to byte offset
+  uint32_t byte_off = static_cast<uint32_t>(addr) * 2;
+  if (byte_off + 1 < sdram.size()) {
+    *data = (int32_t)(sdram[byte_off] | (sdram[byte_off + 1] << 8));
+  } else {
+    *data = 0;
+  }
+  // mtrace: internal word addr → SoC byte addr
+  sdram_mtrace_rd(SimEnv::kSdramBase + static_cast<uint32_t>(addr) * 2,
+                  static_cast<uint32_t>(*data));
+}
+
+// SDRAM write DPI callback
+// mask: bit0 masks DQ[7:0], bit1 masks DQ[15:8] (active high = mask)
+extern "C" void sdram_dpi_write(int addr, int data, int mask) {
+  if (!g_sim_env) return;
+
+  std::vector<uint8_t>& sdram = SimEnv_get_sdram(g_sim_env);
+  uint32_t byte_off = static_cast<uint32_t>(addr) * 2;
+  if (byte_off + 1 < sdram.size()) {
+    // Use DQM-style mask (1 = mask/disable write for that byte)
+    if (!(mask & 1)) sdram[byte_off]     = (uint8_t)(data & 0xFF);
+    if (!(mask & 2)) sdram[byte_off + 1] = (uint8_t)((data >> 8) & 0xFF);
+  }
+  // mtrace: DQM mask → write strobe (DQM=1 means masked, so strb = ~mask)
+  uint32_t strb = (~static_cast<uint32_t>(mask)) & 0x3;
+  sdram_mtrace_wr(SimEnv::kSdramBase + static_cast<uint32_t>(addr) * 2,
+                  static_cast<uint32_t>(data), strb);
 }
 
 // PSRAM write DPI callback

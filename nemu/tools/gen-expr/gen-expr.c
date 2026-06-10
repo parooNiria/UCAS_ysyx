@@ -59,9 +59,9 @@ static void append_to_buf(const char *fmt, ...) {
 static void gen_num(bool non_zero) {
   uint32_t v = non_zero ? (uint32_t)(choose(100) + 1) : (uint32_t)choose(100);
   if (choose(100) < 50) {
-    append_to_buf("%u", v);
+    append_to_buf("%uu", v);
   } else {
-    append_to_buf("0x%x", v);
+    append_to_buf("0x%xu", v);
   }
 }
 

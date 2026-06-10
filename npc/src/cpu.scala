@@ -3,123 +3,6 @@ package npc
 import chisel3._
 import chisel3.util._
 
-class REFcommitDPI extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
-    val commit_enable = Input(Bool())
-    val dbg_rf = Input(Vec(32, UInt(32.W)))
-    val dbg_mstatus = Input(UInt(32.W))
-    val dbg_mtvec = Input(UInt(32.W))
-    val dbg_mepc = Input(UInt(32.W))
-    val dbg_mcause = Input(UInt(32.W))
-    val last_inst = Input(UInt(32.W))
-    val next_pc = Input(UInt(32.W))
-    val last_pc = Input(UInt(32.W))
-    val device_type = Input(UInt(32.W))
-  })
-  // 直接内嵌 Verilog + DPI-C 调用
-  setInline("REFcommitDPI.v",
-    """
-    module REFcommitDPI(
-        input commit_enable,
-        input [31:0] dbg_rf_0,
-        input [31:0] dbg_rf_1,
-        input [31:0] dbg_rf_2,
-        input [31:0] dbg_rf_3,
-        input [31:0] dbg_rf_4,
-        input [31:0] dbg_rf_5,
-        input [31:0] dbg_rf_6,
-        input [31:0] dbg_rf_7,
-        input [31:0] dbg_rf_8,
-        input [31:0] dbg_rf_9,
-        input [31:0] dbg_rf_10,
-        input [31:0] dbg_rf_11,
-        input [31:0] dbg_rf_12,
-        input [31:0] dbg_rf_13,
-        input [31:0] dbg_rf_14,
-        input [31:0] dbg_rf_15,
-        input [31:0] dbg_rf_16,
-        input [31:0] dbg_rf_17,
-        input [31:0] dbg_rf_18,
-        input [31:0] dbg_rf_19,
-        input [31:0] dbg_rf_20,
-        input [31:0] dbg_rf_21,
-        input [31:0] dbg_rf_22,
-        input [31:0] dbg_rf_23,
-        input [31:0] dbg_rf_24,
-        input [31:0] dbg_rf_25,
-        input [31:0] dbg_rf_26,
-        input [31:0] dbg_rf_27,
-        input [31:0] dbg_rf_28,
-        input [31:0] dbg_rf_29,
-        input [31:0] dbg_rf_30,
-        input [31:0] dbg_rf_31,
-        input [31:0] dbg_mstatus,
-        input [31:0] dbg_mtvec,
-        input [31:0] dbg_mepc,
-        input [31:0] dbg_mcause,
-        input [31:0] last_inst,
-        input [31:0] next_pc,
-        input [31:0] last_pc,
-        input [31:0] device_type
-    );
-
-    import "DPI-C" function void dpi_commit(input int dbg_mstatus, 
-    input int dbg_mtvec, input int dbg_mepc, input int dbg_mcause,
-    input int dbg_rf0, 
-    input int dbg_rf1, input int dbg_rf2, input int dbg_rf3, input int dbg_rf4, input int dbg_rf5,
-    input int dbg_rf6, input int dbg_rf7, input int dbg_rf8, input int dbg_rf9, input int dbg_rf10, input int dbg_rf11, input int
-    dbg_rf12, input int dbg_rf13, input int dbg_rf14, input int dbg_rf15, input int dbg_rf16, input int dbg_rf17,
-    input int dbg_rf18, input int dbg_rf19, input int dbg_rf20, input int dbg_rf21, input int dbg_rf22, input int dbg_rf23, input int
-    dbg_rf24, input int dbg_rf25, input int dbg_rf26, input int dbg_rf27, input int dbg_rf28, input int dbg_rf29, input int dbg_rf30, input int dbg_rf31, input int last_inst,
-    input int next_pc, input int last_pc,input int device_type);
-    always @(*) begin
-      if (commit_enable) begin
-          dpi_commit(dbg_mstatus, dbg_mtvec, dbg_mepc, dbg_mcause,
-          dbg_rf_0, dbg_rf_1, dbg_rf_2, dbg_rf_3, dbg_rf_4, dbg_rf_5,
-          dbg_rf_6, dbg_rf_7, dbg_rf_8, dbg_rf_9, dbg_rf_10, dbg_rf_11, dbg_rf_12, dbg_rf_13, dbg_rf_14, dbg_rf_15, dbg_rf_16, dbg_rf_17,
-          dbg_rf_18, dbg_rf_19, dbg_rf_20, dbg_rf_21, dbg_rf_22, dbg_rf_23, dbg_rf_24, dbg_rf_25, dbg_rf_26, dbg_rf_27, dbg_rf_28, dbg_rf_29, dbg_rf_30, dbg_rf_31,
-          last_inst, next_pc, last_pc, device_type);
-      end
-    end
-
-    endmodule
-    """.stripMargin)
-}
-  
-class REFinitDPI extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
-    val init_enable = Input(Bool())
-    val dbg_mstatus = Input(UInt(32.W))
-    val dbg_mtvec = Input(UInt(32.W))
-    val dbg_mepc = Input(UInt(32.W))
-    val dbg_mcause = Input(UInt(32.W))
-    val dbg_pc = Input(UInt(32.W))
-  })
-  // 直接内嵌 Verilog + DPI-C 调用
-  setInline("REFinitDPI.v",
-    """
-    module REFinitDPI(
-        input init_enable,
-        input [31:0] dbg_mstatus,
-        input [31:0] dbg_mtvec,
-        input [31:0] dbg_mepc,
-        input [31:0] dbg_mcause,
-        input [31:0] dbg_pc
-    );
-
-    import "DPI-C" function void dpi_init(input int dbg_mstatus, 
-    input int dbg_mtvec, input int dbg_mepc, input int dbg_mcause, input int dbg_pc);
-    always @(*) begin
-      if (init_enable) begin
-          dpi_init(dbg_mstatus, dbg_mtvec, dbg_mepc, dbg_mcause, dbg_pc);
-      end
-    end
-
-    endmodule
-    """.stripMargin)
-}
-
-
 class cpu extends Module {
   val io = IO(new Bundle {
     val axi_if = new AXI4Bundle
@@ -186,7 +69,8 @@ class cpu extends Module {
   memu.io.bvalid := io.axi_mem.bvalid
   memu.io.bid := io.axi_mem.bid
   io.axi_mem.bready := memu.io.bready
-  wbu.io.dbg_reg_a0 := rf.io.rf_dbg(10)
+
+  // Commit tracking registers (for difftest DPI)
   val commit_last = RegInit(false.B)
   val last_inst = Reg(UInt(32.W))
   val last_pc = Reg(UInt(32.W))
@@ -203,29 +87,68 @@ class cpu extends Module {
     last_next_pc := 0.U
   }
 
-  val REFcommitDPI = Module(new REFcommitDPI)
-  REFcommitDPI.io.commit_enable := commit_last
-  REFcommitDPI.io.dbg_rf := rf.io.rf_dbg
-  REFcommitDPI.io.dbg_mstatus := wbu.io.dbg_mstatus
-  REFcommitDPI.io.dbg_mtvec := wbu.io.dbg_mtvec
-  REFcommitDPI.io.dbg_mepc := wbu.io.dbg_mepc
-  REFcommitDPI.io.dbg_mcause := wbu.io.dbg_mcause
-  REFcommitDPI.io.last_inst := last_inst
-  REFcommitDPI.io.next_pc := last_next_pc
-  REFcommitDPI.io.last_pc := last_pc
-  REFcommitDPI.io.device_type := Cat(0.U(31.W), wbu.io.out.device_access)
+  // Reset edge detection (for difftest init DPI)
+  val rst = this.reset.asBool
+  val rst_delayed = RegNext(rst)
+  val init_pulse = rst_delayed && !rst
 
-val rst = this.reset.asBool
+  // =========================================================================
+  // DPIConnect — all DPI-C modules in one place.
+  // Comment out these lines to exclude all DPI for synthesis timing analysis.
+  // =========================================================================
+  val dpi = Module(new DPIConnect)
 
-val rst_delayed = RegNext(rst)
+  // REFcommitDPI
+  dpi.io.commit_last    := commit_last
+  dpi.io.dbg_rf         := rf.io.rf_dbg
+  dpi.io.commit_mstatus := wbu.io.dbg_mstatus
+  dpi.io.commit_mtvec   := wbu.io.dbg_mtvec
+  dpi.io.commit_mepc    := wbu.io.dbg_mepc
+  dpi.io.commit_mcause  := wbu.io.dbg_mcause
+  dpi.io.last_inst      := last_inst
+  dpi.io.next_pc        := last_next_pc
+  dpi.io.last_pc        := last_pc
+  dpi.io.device_access  := wbu.io.out.device_access
 
-val init_pulse = rst_delayed && !rst
+  // REFinitDPI
+  dpi.io.init_pulse     := init_pulse
+  dpi.io.init_mstatus   := wbu.io.dbg_mstatus
+  dpi.io.init_mtvec     := wbu.io.dbg_mtvec
+  dpi.io.init_mepc      := wbu.io.dbg_mepc
+  dpi.io.init_mcause    := wbu.io.dbg_mcause
+  dpi.io.init_pc        := ifu.io.out.bits.pc
 
-  val REFinitDPI = Module(new REFinitDPI)
-  REFinitDPI.io.init_enable := init_pulse
-  REFinitDPI.io.dbg_mstatus := wbu.io.dbg_mstatus
-  REFinitDPI.io.dbg_mtvec := wbu.io.dbg_mtvec
-  REFinitDPI.io.dbg_mepc := wbu.io.dbg_mepc
-  REFinitDPI.io.dbg_mcause := wbu.io.dbg_mcause
-  REFinitDPI.io.dbg_pc := ifu.io.out.bits.pc
+  // EbreakDPI
+  dpi.io.ebreak         := wbu.io.out.ebreak
+  dpi.io.ebreak_a0      := rf.io.rf_dbg(10)
+
+  // PerfEventDPI: IFU
+  dpi.io.ifu_fetch      := ifu.io.out.valid && ifu.io.out.ready
+  dpi.io.ifu_stall_ar   := ifu.io.perf_stall.stall_ar
+  dpi.io.ifu_stall_r    := ifu.io.perf_stall.stall_r
+  dpi.io.ifu_stall_bp   := ifu.io.perf_stall.stall_bp
+
+  // PerfEventDPI: IDU
+  dpi.io.idu_compute    := idu.io.perf_events.compute
+  dpi.io.idu_branch     := idu.io.perf_events.branch
+  dpi.io.idu_jump       := idu.io.perf_events.jump
+  dpi.io.idu_load       := idu.io.perf_events.load
+  dpi.io.idu_store      := idu.io.perf_events.store
+  dpi.io.idu_csr        := idu.io.perf_events.csr
+  dpi.io.idu_system     := idu.io.perf_events.system
+
+  // PerfEventDPI: EXU
+  dpi.io.exu_compute    := exu.io.perf_compute
+  dpi.io.exu_load_issue := exu.io.perf_load_issue
+  dpi.io.exu_store_issue:= exu.io.perf_store_issue
+
+  // PerfEventDPI: LSU
+  dpi.io.lsu_load_done  := memu.io.perf_load
+  dpi.io.lsu_store_done := memu.io.perf_store
+
+  // PerfEventDPI: WBU
+  dpi.io.wbu_commit     := wbu.io.out.commit_valid
+  // =========================================================================
+  // END OF DPI BLOCK
+  // =========================================================================
 }

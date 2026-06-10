@@ -1,6 +1,10 @@
+.DEFAULT_GOAL := all
 TOPNAME    = ysyxSoCFull
 VERILATOR ?= verilator
 VERILATOR_ROOT := $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
+NVBOARD_HOME ?= $(abspath ../nvboard)
+include $(NVBOARD_HOME)/scripts/nvboard.mk
+NXDC_FILES = constr/ysyxsoc.nxdc
 
 IMG_FILE_NAME ?= add-riscv32e-npc
 BIN_BASE  ?= 0x80000000
@@ -32,6 +36,10 @@ SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildca
 VSRCS =  $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 VSRCS += $(SOC_HOME)/build/ysyxSoCFull.v
 VSRCS += $$(find $(PERIP_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
+
+# NVBoard include flags (INC_PATH, CXXFLAGS, LDFLAGS come from nvboard.mk)
+NVBOARD_INCFLAGS = $(addprefix -I, $(INC_PATH))
+
 VERILATOR_FLAGS = \
   --cc --exe --build -j 0 --trace-fst \
   --top-module $(TOPNAME) \
@@ -41,10 +49,15 @@ VERILATOR_FLAGS = \
   -I$(BUILD_DIR) \
   --timescale "1ns/1ns" \
   --no-timing \
-  -CFLAGS "-std=c++17 -O2 " \
-  -LDFLAGS "-lcapstone -ldl"
-RUN_FLAGS = --no-limit  --no-diff --no-wave
+  -CFLAGS "-std=c++17 -O2 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
+  -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
+RUN_FLAGS = --no-limit --no-diff --no-trace --no-wave --no-board
 all: $(BIN)
+
+# NVBoard constraint → auto_bind.cpp
+SRC_AUTO_BIND = $(abspath soc_csrc/auto_bind.cpp)
+$(SRC_AUTO_BIND): $(NXDC_FILES)
+	python3 $(NVBOARD_HOME)/scripts/auto_pin_bind.py $^ $@
 
 test:
 	COURSIER_REPOSITORIES="ivy2Local|https://maven.aliyun.com/repository/public" mill -i test
@@ -57,7 +70,7 @@ $(BUILD_DIR)/.verilog_stamp: $(SCALA_SRCS)
 
 verilog: $(BUILD_DIR)/.verilog_stamp
 
-$(BIN): $(BUILD_DIR)/.verilog_stamp $(CSRCS)
+$(BIN): $(BUILD_DIR)/.verilog_stamp $(CSRCS) $(NVBOARD_ARCHIVE)
 	@mkdir -p $(BUILD_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
 	@rm -f $(BIN)
@@ -93,9 +106,21 @@ bsp:
 idea:
 	mill -i mill.idea.GenIdea/idea
 
+LINT_FLAGS = \
+  --lint-only -Wall \
+  --top-module $(TOPNAME) \
+  -I$(PERIP_DIR)/uart16550/rtl \
+  -I$(PERIP_DIR)/spi/rtl \
+  -I$(BUILD_DIR) \
+  --timescale "1ns/1ns" \
+  --no-timing
+
+lint: $(BUILD_DIR)/.verilog_stamp
+	$(VERILATOR) $(LINT_FLAGS) $(VSRCS) > warning.txt 2>&1
+
 clean:
 	-rm -rf $(BUILD_DIR) wave.fst
 
-.PHONY: all test verilog run sim help reformat checkformat bsp idea clean
+.PHONY: all test verilog run sim help reformat checkformat bsp idea lint clean
 
 -include ../Makefile

@@ -1,3 +1,11 @@
+config YSYXSOC
+  bool "Enable ysyxSoC memory regions (Flash/SRAM/SDRAM)"
+  default n
+  help
+    Add Flash (0x30000000), SRAM (0x0f000000), and SDRAM (0xa0000000) memory regions
+    for ysyxSoC simulation. When enabled, SDRAM will shadow the NEMU VGA MMIO space
+    at 0xa0000000 — ysyxSoC uses its own VGA at 0x21000000 via DPI-C instead.
+
 menuconfig DEVICE
   depends on !TARGET_SHARE
   bool "Devices"

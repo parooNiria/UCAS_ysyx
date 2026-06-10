@@ -7,7 +7,10 @@
 #include <string.h>
 #include <assert.h>
 #include <getopt.h>
+#include <nvboard.h>
 
+void nvboard_bind_all_pins(VysyxSoCFull* top);
+void perf_print_report();
 // Color definitions for output
 #define COLOR_GREEN "\033[32m"
 #define COLOR_RED   "\033[31m"
@@ -26,6 +29,7 @@ SimEnv::SimEnv()
   , ebreak_a0_(-1)
   , max_sim_time_(10000000)
   , waveform_enabled_(true)
+  , nvboard_enabled_(true)
   , wave_file_("wave.fst")
 {
   // Create DiffTest instance
@@ -42,26 +46,24 @@ SimEnv::~SimEnv() {
 bool SimEnv::init(int argc, char** argv) {
   printf(COLOR_CYAN "[INIT] Initializing simulation environment..." COLOR_RESET "\n");
 
-  // Initialize itrace system
-  if (!init_trace()) {
-    printf(COLOR_RED "[ERROR] Failed to initialize trace system" COLOR_RESET "\n");
-    return false;
-  }
-
   // --- Parse command-line arguments ---
   const char *img_path   = "/root/UCAS_ysyx/npc/test_csrc/char-test.bin";
   bool no_diff  = false;
   bool no_wave  = false;
   bool no_limit = false;
+  bool no_trace = false;
+  bool no_board = false;
 
   const struct option long_options[] = {
     {"no-diff",   no_argument, NULL, 'd'},
     {"no-wave",   no_argument, NULL, 'w'},
     {"no-limit",  no_argument, NULL, 'l'},
+    {"no-trace",  no_argument, NULL, 't'},
+    {"no-board",  no_argument, NULL, 'b'},
     {"help",      no_argument, NULL, 'h'},
     {0, 0, 0, 0}
   };
-  const char *optstring = "-dwlh";
+  const char *optstring = "-dwlthb";
 
   int opt;
   while ((opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
@@ -78,6 +80,14 @@ bool SimEnv::init(int argc, char** argv) {
         no_limit = true;
         printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable max cycle limit\n");
         break;
+      case 't':
+        no_trace = true;
+        printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable instruction & memory trace\n");
+        break;
+      case 'b':
+        no_board = true;
+        printf(COLOR_CYAN "[TIPS] " COLOR_RESET "Disable NVBoard (virtual board GUI)\n");
+        break;
       case 1:  // non-option argument → image path
         img_path = optarg;
         break;
@@ -91,6 +101,8 @@ bool SimEnv::init(int argc, char** argv) {
         printf("  --no-diff        Disable differential testing\n");
         printf("  --no-wave        Disable waveform recording\n");
         printf("  --no-limit       Disable max cycle limit\n");
+        printf("  --no-trace       Disable instruction & memory trace\n");
+        printf("  --no-board       Disable NVBoard (virtual board GUI)\n");
         printf("  -h, --help       Display this help\n");
         return false;
     }
@@ -100,12 +112,27 @@ bool SimEnv::init(int argc, char** argv) {
     max_sim_time_ = UINT64_MAX;
   }
 
+  if (no_board) {
+    nvboard_enabled_ = false;
+  }
+
+  // Initialize trace system (after arg parsing so --no-trace takes effect)
+  if (no_trace) set_disable_trace(true);
+  if (!init_trace()) {
+    printf(COLOR_RED "[ERROR] Failed to initialize trace system" COLOR_RESET "\n");
+    return false;
+  }
+
   // Initialize flash (erased state 0xFF), then load boot image at offset 0
   init_flash();
 
   // Initialize PSRAM (cleared to zero)
   psram_.assign(kPsramSize, 0);
   printf("[INIT] PSRAM initialized: %zu bytes\n", psram_.size());
+
+  // Initialize SDRAM (cleared to zero, 32MB for MT48LC16M16A2)
+  sdram_.assign(kSdramSize, 0);
+  printf("[INIT] SDRAM initialized: %zu bytes\n", sdram_.size());
 
   // Load boot image into SPI flash at offset 0 (CPU boots from 0x30000000 via XIP)
   if (!load_flash_image(img_path, 0)) {
@@ -115,6 +142,12 @@ bool SimEnv::init(int argc, char** argv) {
 
   // Initialize Verilator
   init_verilator();
+
+  // Initialize NVBoard
+  if (nvboard_enabled_) {
+    nvboard_bind_all_pins(top_);
+    nvboard_init(0);
+  }
 
   // Initialize waveform recording (skip if --no-wave)
   if (waveform_enabled_ && !no_wave) {
@@ -126,6 +159,7 @@ bool SimEnv::init(int argc, char** argv) {
     const char *nemu_so = "/root/UCAS_ysyx/nemu/build/riscv32-nemu-interpreter-so";
     if (difftest_->init(nemu_so)) {
       difftest_->sync_mrom(kFlashXipBase, flash_.data(), flash_.size());
+      difftest_->sync_mrom(kPsramBase, psram_.data(), psram_.size());
       difftest_enabled_ = true;
     }
   }
@@ -145,12 +179,14 @@ int SimEnv::run() {
     if (!tick()) {
       break;
     }
+    if (nvboard_enabled_) nvboard_update();
 
     if(ebreak_triggered_){
       break;
     }
   }
 
+  perf_print_report();
   if(ebreak_triggered_ && ebreak_a0_ == 0){
     return 0;
   }else if(ebreak_triggered_){
@@ -294,4 +330,8 @@ std::vector<uint8_t>& SimEnv_get_flash(SimEnv* env) {
 
 std::vector<uint8_t>& SimEnv_get_psram(SimEnv* env) {
   return env->psram_;
+}
+
+std::vector<uint8_t>& SimEnv_get_sdram(SimEnv* env) {
+  return env->sdram_;
 }
