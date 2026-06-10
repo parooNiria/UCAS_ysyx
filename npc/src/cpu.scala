@@ -16,6 +16,7 @@ class cpu extends Module {
   val memu = Module(new MEMU)
   val wbu = Module(new WBU)
   val rf = Module(new RegisterFile)
+  val icache = Module(new ICache)  // I-Cache between IFU and AXI
 
   ifu.io.commit_info.commit_valid := wbu.io.out.commit_valid
   ifu.io.commit_info.next_pc := wbu.io.out.next_pc
@@ -34,7 +35,9 @@ class cpu extends Module {
   rf.io.waddr := wbu.io.out.reg_dest
   rf.io.wdata := wbu.io.out.reg_write_data
 
-  io.axi_if <> ifu.io.if_axi
+  // IFU → ICache → AXI
+  icache.io.if_req <> ifu.io.if_sram
+  io.axi_if <> icache.io.axi
 
   io.axi_mem.awaddr := exu.io.awaddr
   io.axi_mem.awvalid := exu.io.awvalid

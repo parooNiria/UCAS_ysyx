@@ -28,8 +28,6 @@ BIN       = $(BUILD_DIR)/$(TOPNAME)
 PERIP_DIR   := $(SOC_HOME)/perip
 # 包含 C++ 仿真文件 (从当前的sim_csrc、csrc中捕获)
 CSRCS = $(wildcard soc_csrc/*.cpp )
-# svdpi scope APIs (svGetScopeFromName/svSetScope) are implemented here in Verilator.
-CSRCS += $(VERILATOR_ROOT)/include/verilated_dpi.cpp
 # 包含 Scala 源码和构建脚本，用于判断是否需要重新生成 Verilog
 SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
 
@@ -51,7 +49,7 @@ VERILATOR_FLAGS = \
   --no-timing \
   -CFLAGS "-std=c++17 -O2 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
   -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
-RUN_FLAGS = --no-limit --no-diff --no-trace --no-wave --no-board
+RUN_FLAGS = --no-limit    --no-board --no-wave --no-diff
 all: $(BIN)
 
 # NVBoard constraint → auto_bind.cpp
