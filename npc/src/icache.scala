@@ -6,7 +6,7 @@ import chisel3.util._
 class ICache(
   val nWays: Int     = 2,
   val nSets: Int     = 256,
-  val blockSize: Int = 16
+  val blockSize: Int = 16  //字节数
 ) extends Module {
 
   val offsetBits = log2Ceil(blockSize)
@@ -30,9 +30,11 @@ class ICache(
     val data = UInt((blockSize * 8).W)
   }
   val cache       = Seq.fill(nWays)(SyncReadMem(nSets, new cache_line))
-  val cache_valid = VecInit(Seq.fill(nWays)(RegInit(VecInit(Seq.fill(nSets)(false.B)))))
+  val cache_valid = RegInit(
+    VecInit(Seq.fill(nWays)(VecInit(Seq.fill(nSets)(false.B))))
+  )
 
-  val repl_ptr   = RegInit(VecInit(Seq.fill(nSets)(0.U(wayBits.W))))
+  val repl_ptr   = RegInit(0.U(wayBits.W))
   val refill_way = RegInit(0.U(wayBits.W))
 
   val sIDLE :: sLookup :: sReplace :: sRefill :: Nil = Enum(4)
@@ -79,15 +81,15 @@ class ICache(
 
   val cache_hit_ways = Wire(Vec(nWays, Bool()))
   for (w <- 0 until nWays) {
-    cache_hit_ways(w) := (cache_line_read(w).tag === reg_tag) && cache_valid_read(w)
+    cache_hit_ways(w) := (cache_line_read(w).tag === reg_tag) && cache_valid_read(w)&& (state === sLookup)
   }
   val cache_hit_way = PriorityEncoder(cache_hit_ways)
   cache_hit := cache_hit_ways.reduce(_ || _)
 
   // ── Round-robin: select replace way on miss ──
-  when (state === sLookup && !cache_hit) {
-    refill_way := repl_ptr(reg_index)
-    repl_ptr(reg_index) := repl_ptr(reg_index) + 1.U
+  when (state === sLookup) {
+    refill_way := repl_ptr
+    repl_ptr := repl_ptr + 1.U
   }
 
 
@@ -109,10 +111,10 @@ class ICache(
   io.axi.rready := state === sRefill
 
   val rdata_buffer = Reg(UInt((blockSize * 8).W))
-  val rdata_cnt    = RegInit(0.U(log2Ceil(wordCnt + 1).W))
+  val rdata_cnt    = RegInit(0.U(log2Ceil(wordCnt).W))
 
   // 组合拼接: 旧buffer + 当前拍rdata → 完整数据块 (解决rlast时寄存器未更新问题)
-  val refill_buf_comb = rdata_buffer | (io.axi.rdata << (rdata_cnt * 32.U))
+  val refill_buf_comb = Cat(io.axi.rdata, rdata_buffer((blockSize * 8 - 1), 32))
 
   when (state === sRefill && io.axi.rvalid && io.axi.rready) {
     rdata_buffer := refill_buf_comb
