@@ -38,6 +38,11 @@ class PerfEventDPI extends ExtModule {
 
     // WBU commit (for latency tracking dequeue)
     val wbu_commit     = Input(Bool())
+
+    // ICache events
+    val icache_access     = Input(Bool())
+    val icache_hit        = Input(Bool())
+    val icache_miss_cycle = Input(Bool())
   })
 
   setInline("PerfEventDPI.v",
@@ -60,7 +65,10 @@ class PerfEventDPI extends ExtModule {
     |    input         exu_store_issue,
     |    input         lsu_load_done,
     |    input         lsu_store_done,
-    |    input         wbu_commit
+    |    input         wbu_commit,
+    |    input         icache_access,
+    |    input         icache_hit,
+    |    input         icache_miss_cycle
     |);
     |
     |  import "DPI-C" function void dpi_perf_event(
@@ -80,7 +88,10 @@ class PerfEventDPI extends ExtModule {
     |    input int  exu_store_issue,
     |    input int  lsu_load_done,
     |    input int  lsu_store_done,
-    |    input int  wbu_commit
+    |    input int  wbu_commit,
+    |    input int  icache_access,
+    |    input int  icache_hit,
+    |    input int  icache_miss_cycle
     |  );
     |
     |  always @(posedge clk) begin
@@ -101,7 +112,10 @@ class PerfEventDPI extends ExtModule {
     |      {31'd0, exu_store_issue},
     |      {31'd0, lsu_load_done},
     |      {31'd0, lsu_store_done},
-    |      {31'd0, wbu_commit}
+    |      {31'd0, wbu_commit},
+    |      {31'd0, icache_access},
+    |      {31'd0, icache_hit},
+    |      {31'd0, icache_miss_cycle}
     |    );
     |  end
     |

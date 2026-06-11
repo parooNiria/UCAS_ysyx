@@ -3,6 +3,12 @@ package npc
 import chisel3._
 import chisel3.util._
 
+class ICachePerf extends Bundle {
+  val access     = Output(Bool())   // cache 访问（lookup 有效）
+  val hit        = Output(Bool())   // cache 命中（sLookup && cache_hit）
+  val miss_cycle = Output(Bool())   // miss 处理中（sReplace || sRefill）
+}
+
 class ICache(
   val nWays: Int     = 2,
   val nSets: Int     = 256,
@@ -23,6 +29,7 @@ class ICache(
   val io = IO(new Bundle {
     val if_req = Flipped(new if_sram)
     val axi    = new AXI4Bundle
+    val perf   = new ICachePerf
   })
 
   class cache_line extends Bundle {
@@ -30,9 +37,7 @@ class ICache(
     val data = UInt((blockSize * 8).W)
   }
   val cache       = Seq.fill(nWays)(SyncReadMem(nSets, new cache_line))
-  val cache_valid = RegInit(
-    VecInit(Seq.fill(nWays)(VecInit(Seq.fill(nSets)(false.B))))
-  )
+  val cache_valid = RegInit(VecInit(Seq.fill(nWays)(0.U(nSets.W))))
 
   val repl_ptr   = RegInit(0.U(wayBits.W))
   val refill_way = RegInit(0.U(wayBits.W))
@@ -129,7 +134,7 @@ class ICache(
     for (w <- 0 until nWays) {
       when (refill_way === w.U) {
         cache(w).write(reg_index, Cat(reg_tag, refill_buf_comb).asTypeOf(new cache_line))
-        cache_valid(w)(reg_index) := true.B
+        cache_valid(w) := cache_valid(w) | UIntToOH(reg_index)
       }
     }
   }
@@ -143,4 +148,9 @@ class ICache(
   // data_ok: 数据有效的握手信号
   io.if_req.data_ok := (state === sLookup && cache_hit) || refill_done
   io.if_req.rdata := Mux(refill_done, refill_word, hit_word)
+
+  // ── Performance event pulses (DPI-C) ──
+  io.perf.access     := lookup
+  io.perf.hit        := state === sLookup && cache_hit
+  io.perf.miss_cycle := state === sReplace || state === sRefill
 }

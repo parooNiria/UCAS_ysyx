@@ -151,6 +151,11 @@ class cpu extends Module {
 
   // PerfEventDPI: WBU
   dpi.io.wbu_commit     := wbu.io.out.commit_valid
+
+  // PerfEventDPI: ICache
+  dpi.io.icache_access     := icache.io.perf.access
+  dpi.io.icache_hit        := icache.io.perf.hit
+  dpi.io.icache_miss_cycle := icache.io.perf.miss_cycle
   // =========================================================================
   // END OF DPI BLOCK
   // =========================================================================

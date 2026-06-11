@@ -59,6 +59,11 @@ class DPIConnect extends Module {
 
     // ── PerfEventDPI: WBU ──
     val wbu_commit     = Input(Bool())
+
+    // ── PerfEventDPI: ICache ──
+    val icache_access     = Input(Bool())
+    val icache_hit        = Input(Bool())
+    val icache_miss_cycle = Input(Bool())
   })
 
   // =========================================================================
@@ -112,6 +117,10 @@ class DPIConnect extends Module {
   perf_dpi.io.lsu_load_done  := io.lsu_load_done
   perf_dpi.io.lsu_store_done := io.lsu_store_done
   perf_dpi.io.wbu_commit     := io.wbu_commit
+
+  perf_dpi.io.icache_access     := io.icache_access
+  perf_dpi.io.icache_hit        := io.icache_hit
+  perf_dpi.io.icache_miss_cycle := io.icache_miss_cycle
 
   // =========================================================================
   //  END OF DPI BLOCK

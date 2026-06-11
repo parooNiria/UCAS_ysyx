@@ -42,6 +42,11 @@ static bool     lsu_store_pending     = false;
 static uint64_t lsu_store_latency_sum = 0;
 static uint64_t lsu_store_latency_cnt = 0;
 
+// ── ICache counters (for AMAT) ──
+static uint64_t cnt_icache_access     = 0;
+static uint64_t cnt_icache_hit        = 0;
+static uint64_t cnt_icache_miss_cycles = 0;
+
 // ── Per-category cycle tracking ──
 #define CAT_QUEUE_DEPTH 16
 static uint64_t cat_queue_cycle[CAT_QUEUE_DEPTH] = {0};
@@ -150,6 +155,25 @@ void perf_print_report() {
                100.0 * cnt_ifu_stall_bp / cnt_ifu_total_stalls);
     }
 
+    // ── ICache AMAT ──
+    uint64_t icache_misses = cnt_icache_access - cnt_icache_hit;
+    double icache_hit_rate = (cnt_icache_access > 0)
+        ? (double)cnt_icache_hit / (double)cnt_icache_access : 0.0;
+    double icache_miss_rate = (cnt_icache_access > 0)
+        ? (double)icache_misses / (double)cnt_icache_access : 0.0;
+    double icache_miss_penalty = (icache_misses > 0)
+        ? (double)cnt_icache_miss_cycles / (double)icache_misses : 0.0;
+    double icache_amat = 2.0 + icache_miss_rate * icache_miss_penalty;
+
+    printf("\033[36m--- ICache AMAT ---\033[0m\n");
+    printf("  Cache accesses:     %llu\n", (unsigned long long)cnt_icache_access);
+    printf("  Cache hits:         %llu\n", (unsigned long long)cnt_icache_hit);
+    printf("  Cache misses:       %llu\n", (unsigned long long)icache_misses);
+    printf("  Hit rate:           %5.1f%%\n", 100.0 * icache_hit_rate);
+    printf("  Miss rate:          %5.1f%%\n", 100.0 * icache_miss_rate);
+    printf("  Miss penalty:       %6.2f cycles\n", icache_miss_penalty);
+    printf("  AMAT:               %6.2f cycles\n", icache_amat);
+
     // ── LSU latency ──
     printf("\033[36m--- LSU Memory Access Latency ---\033[0m\n");
     if (cnt_lsu_load_done > 0) {
@@ -187,7 +211,10 @@ extern "C" void dpi_perf_event(
     int exu_store_issue,
     int lsu_load_done,
     int lsu_store_done,
-    int wbu_commit)
+    int wbu_commit,
+    int icache_access,
+    int icache_hit,
+    int icache_miss_cycle)
 {
     perf_cycle++;
 
@@ -196,6 +223,11 @@ extern "C" void dpi_perf_event(
     if (ifu_stall_ar) cnt_ifu_stall_ar++;
     if (ifu_stall_r)  cnt_ifu_stall_r++;
     if (ifu_stall_bp) cnt_ifu_stall_bp++;
+
+    // ── ICache events ──
+    if (icache_access)     cnt_icache_access++;
+    if (icache_hit)        cnt_icache_hit++;
+    if (icache_miss_cycle) cnt_icache_miss_cycles++;
 
     // ── IDU decode: instruction categories ──
     bool idu_fire = false;

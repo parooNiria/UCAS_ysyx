@@ -49,7 +49,7 @@ VERILATOR_FLAGS = \
   --no-timing \
   -CFLAGS "-std=c++17 -O2 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
   -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
-RUN_FLAGS = --no-limit    --no-board --no-diff --no-wave
+RUN_FLAGS = --no-limit    --no-board  
 all: $(BIN)
 
 # NVBoard constraint → auto_bind.cpp
