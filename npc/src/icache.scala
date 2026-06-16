@@ -11,8 +11,8 @@ class ICachePerf extends Bundle {
 
 class ICache(
   val nWays: Int     = 2,
-  val nSets: Int     = 256,
-  val blockSize: Int = 16  //字节数
+  val nSets: Int     = 64,
+  val blockSize: Int = 32  //字节数
 ) extends Module {
 
   val offsetBits = log2Ceil(blockSize)

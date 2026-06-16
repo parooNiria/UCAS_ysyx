@@ -47,7 +47,7 @@ class CSR extends Module {
   mcycle := mcycle + 1.U
   //ysyx寄存器
   val mvendorid = RegInit("h79737978".U(32.W))
-  val marchid   = RegInit("h150be98".U(32.W))
+  val marchid   = RegInit("h18da591".U(32.W))
 
   
   val mstatus   = RegInit("h1800".U(32.W))//M-mode

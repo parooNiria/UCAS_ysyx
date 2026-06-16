@@ -3,7 +3,7 @@ package npc
 import chisel3._
 import chisel3.util._
 
-class ysyx_00000000 extends Module {
+class ysyx_26060177 extends Module {
   val io = IO(new Bundle {
     val interrupt = Input(Bool())
     val master = new AXI4Bundle

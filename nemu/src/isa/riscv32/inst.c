@@ -64,7 +64,7 @@ static word_t* csr_get(int csr_id) {
     case 0x7b0: return &cpu.gpr[0]; // dummy test (dcsr)
     case 0x7b1: return &cpu.gpr[0]; // dummy test (dpc)
     case 0xF11: { static word_t v; v = 0x79737978; return &v; } // mvendorid
-    case 0xF12: { static word_t v; v = 0x0150be98; return &v; } // marchid
+    case 0xF12: { static word_t v; v = 0x018da591; return &v; } // marchid
     default: panic("Unsupported CSR 0x%x", csr_id);
   }
 }
