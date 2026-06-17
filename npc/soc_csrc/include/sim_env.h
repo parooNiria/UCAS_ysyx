@@ -75,7 +75,7 @@ public:
   // Internal DPI addr = {bank[1:0], row[12:0], col[8:0]} (24-bit word address)
   std::vector<uint8_t> sdram_;
   static constexpr uint32_t kSdramBase = 0xa0000000u;  // SDRAM base in SoC address space
-  static constexpr uint32_t kSdramSize = 0x02000000u;  // 32MB
+  static constexpr uint32_t kSdramSize = 0x04000000u;  // 32MB
   static constexpr uint32_t kFlashBase = 0x00000000u;
   static constexpr uint32_t kFlashSize = 0x01000000u;  // 16MB
   static constexpr uint32_t kFlashXipBase = 0x30000000u;  // XIP address in SoC

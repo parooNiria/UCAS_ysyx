@@ -26,8 +26,9 @@ BUILD_DIR = $(abspath ./build)
 OBJ_DIR   = $(BUILD_DIR)/obj_dir
 BIN       = $(BUILD_DIR)/$(TOPNAME)
 PERIP_DIR   := $(SOC_HOME)/perip
-# 包含 C++ 仿真文件 (从当前的sim_csrc、csrc中捕获)
-CSRCS = $(wildcard soc_csrc/*.cpp )
+# 包含 C++ 仿真文件
+CSRCS = $(wildcard soc_minimal/*.cpp )
+# CSRCS = $(wildcard soc_csrc/*.cpp )
 # 包含 Scala 源码和构建脚本，用于判断是否需要重新生成 Verilog
 SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
 
@@ -47,9 +48,9 @@ VERILATOR_FLAGS = \
   -I$(BUILD_DIR) \
   --timescale "1ns/1ns" \
   --no-timing \
-  -CFLAGS "-std=c++17 -O2 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
-  -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
-RUN_FLAGS = --no-limit    --no-wave --no-diff
+  -CFLAGS "-std=c++17 -O3 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
+  -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)" 
+RUN_FLAGS = --no-limit
 all: $(BIN)
 
 # NVBoard constraint → auto_bind.cpp

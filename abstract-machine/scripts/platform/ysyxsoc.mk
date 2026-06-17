@@ -9,6 +9,8 @@ AM_SRCS := riscv/ysyxsoc/start.S \
  		    riscv/ysyxsoc/uart.c \
             riscv/ysyxsoc/input.c \
 	            riscv/ysyxsoc/gpu.c \
+				riscv/ysyxsoc/disk.c \
+				riscv/ysyxsoc/audio.c
 #            riscv/ysyxsoc/cte.c \
 #            riscv/ysyxsoc/trap.S \
 #            platform/dummy/vme.c \
