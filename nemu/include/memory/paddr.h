@@ -29,7 +29,7 @@
 #define SRAM_BASE  ((paddr_t)0x0f000000)
 #define SRAM_SIZE  ((paddr_t)0x2000)
 #define SDRAM_BASE ((paddr_t)0xa0000000)
-#define SDRAM_SIZE ((paddr_t)0x02000000)  // 32MB MT48LC16M16A2
+#define SDRAM_SIZE ((paddr_t)0x04000000)  // 32MB MT48LC16M16A2
 #define UART_BASE  ((paddr_t)0x10000000)
 #define UART_SIZE  ((paddr_t)0x1000)
 #endif

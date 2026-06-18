@@ -27,7 +27,7 @@ class WBU extends Module {
     val reg_write_data_reg = Reg(UInt(32.W))
     val csr_write_data_reg = Reg(UInt(32.W))
     val reg_csr_en_dest_reg = Reg(UInt(7.W))
-    val sys_message_reg = Reg(UInt(3.W))
+    val sys_message_reg = Reg(UInt(4.W))
     val device_access_reg = Reg(Bool())
     when(handshake) {
         inst_reg := io.in.bits.inst
@@ -40,9 +40,10 @@ class WBU extends Module {
         device_access_reg := io.in.bits.device_access
     }
 
-    val instMret = sys_message_reg(0)
-    val instEcall = sys_message_reg(2)
+    val instMret   = sys_message_reg(0)
     val instEbreak = sys_message_reg(1)
+    val instEcall  = sys_message_reg(2)
+    val instFencei = sys_message_reg(3)
     val func3 = io.in.bits.inst(14, 12)
     csr.io.csr_waddr := inst_reg(31, 20)
     csr.io.csr_wdata := Mux(func3 === "b011".U || func3 === "b111".U , 0.U,csr_write_data_reg)
@@ -70,4 +71,5 @@ class WBU extends Module {
     io.out.commit_valid := valid
     io.out.device_access := device_access_reg
     io.out.ebreak := instEbreak && valid
+    io.out.fencei := instFencei && valid
 }

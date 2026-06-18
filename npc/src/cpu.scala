@@ -37,6 +37,7 @@ class cpu extends Module {
 
   // IFU → ICache → AXI
   icache.io.if_req <> ifu.io.if_sram
+  icache.io.fencei_req := wbu.io.out.fencei
   io.axi_if <> icache.io.axi
 
   io.axi_mem.awaddr := exu.io.awaddr

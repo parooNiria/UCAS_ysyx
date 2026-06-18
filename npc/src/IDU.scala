@@ -101,6 +101,7 @@ class IDU extends Module {
         BitPat("b000000000001_00000_000_00000_1110011") -> BitPat("b1_0000_01000"), // ebreak
         BitPat("b000000000000_00000_000_00000_1110011") -> BitPat("b1_0000_01000"), // ecall
         BitPat("b0011000_00010_00000_000_00000_1110011") -> BitPat("b1_0000_01000"), // mret
+        BitPat("b000000000000_00000_001_00000_0001111") -> BitPat("b1_0000_01000"), // fence.i
         //CSR指令
         BitPat("b????????????_?????_001_?????_1110011") -> BitPat("b1_0000_00100"), // csrrw
         BitPat("b????????????_?????_010_?????_1110011") -> BitPat("b1_0000_00100"), // csrrs
@@ -137,6 +138,7 @@ class IDU extends Module {
     val inst_mret = inst_eq("0011000_00010_00000_000_00000_1110011")
     val inst_ecall = inst_eq("000000000000_00000_000_00000_1110011")
     val inst_ebreak = inst_eq("000000000001_00000_000_00000_1110011")
+    val inst_fencei = inst_eq("000000000000_00000_001_00000_0001111")
 
     io.rf_read.raddr1 := rs1
     io.rf_read.raddr2 := rs2
@@ -215,7 +217,7 @@ class IDU extends Module {
     val gr_we = !is_s && !is_b && !is_sys
     io.out.bits.reg_csr_mem_en_dest := Cat(is_csr, is_load, gr_we, rd)
     io.out.bits.mem_en_LS_Type := Cat(is_load|is_store, is_load, func3)
-    io.out.bits.sys_message := Cat(inst_ecall, inst_ebreak, inst_mret)
+    io.out.bits.sys_message := Cat(inst_fencei, inst_ecall, inst_ebreak, inst_mret)
     io.out.valid := valid
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg

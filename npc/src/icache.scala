@@ -30,6 +30,7 @@ class ICache(
     val if_req = Flipped(new if_sram)
     val axi    = new AXI4Bundle
     val perf   = new ICachePerf
+    val fencei_req = Input(Bool())
   })
 
   class cache_line extends Bundle {
@@ -38,6 +39,13 @@ class ICache(
   }
   val cache       = Seq.fill(nWays)(SyncReadMem(nSets, new cache_line))
   val cache_valid = RegInit(VecInit(Seq.fill(nWays)(0.U(nSets.W))))
+  val cache_fence = RegInit(false.B)
+  val fence_deal  = Wire(Bool())
+  when (fence_deal) {
+    cache_fence := false.B
+  } .elsewhen (io.fencei_req) {
+    cache_fence := true.B
+  }
 
   val repl_ptr   = RegInit(0.U(wayBits.W))
   val refill_way = RegInit(0.U(wayBits.W))
@@ -59,10 +67,12 @@ class ICache(
 
   // ── State transitions ──
   when (state === sIDLE) {
-    next_state := Mux(io.if_req.req_valid, sLookup, sIDLE)
+    next_state := Mux(cache_fence, sIDLE,
+                  Mux(io.if_req.req_valid, sLookup, sIDLE))
   } .elsewhen (state === sLookup) {
     next_state := Mux(!cache_hit, sReplace,
-                  Mux(io.if_req.req_valid, sLookup, sIDLE))
+                  Mux(cache_hit, sIDLE,
+                  Mux(io.if_req.req_valid, sLookup, sIDLE)))
   } .elsewhen (state === sReplace) {
     next_state := Mux(io.axi.arvalid && io.axi.arready, sRefill, sReplace)
   } .elsewhen (state === sRefill) {
@@ -71,8 +81,8 @@ class ICache(
     next_state := sIDLE
   }
   state  := next_state
-  lookup := (state === sIDLE && io.if_req.req_valid) ||
-             (state === sLookup && io.if_req.req_valid && cache_hit)
+  lookup := (state === sIDLE && io.if_req.req_valid && !cache_fence) ||
+             (state === sLookup && io.if_req.req_valid && cache_hit && !cache_fence)
 
   val cache_line_read = Wire(Vec(nWays, new cache_line))
   for (w <- 0 until nWays) {
@@ -134,10 +144,22 @@ class ICache(
     for (w <- 0 until nWays) {
       when (refill_way === w.U) {
         cache(w).write(reg_index, Cat(reg_tag, refill_buf_comb).asTypeOf(new cache_line))
-        cache_valid(w) := cache_valid(w) | UIntToOH(reg_index)
       }
     }
   }
+
+  when (state === sRefill && io.axi.rvalid && io.axi.rready && io.axi.rlast) {
+    for (w <- 0 until nWays) {
+      when (refill_way === w.U) {
+          cache_valid(w) := cache_valid(w) | UIntToOH(reg_index)
+      }
+    }
+  } .elsewhen (state === sIDLE && cache_fence) {
+    for (w <- 0 until nWays) {
+      cache_valid(w) := 0.U
+    }
+  }
+  fence_deal := state === sIDLE && cache_fence
 
   val hit_word    = (cache_line_read(cache_hit_way).data >> (reg_offset * 32.U))(31, 0)
   val refill_word = (refill_buf_comb >> (reg_offset * 32.U))(31, 0)

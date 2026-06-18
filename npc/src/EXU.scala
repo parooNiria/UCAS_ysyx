@@ -44,7 +44,7 @@ class EXU extends Module {
     val write_data_reg = Reg(UInt(32.W))
     val reg_csr_mem_en_dest_reg = Reg(UInt(8.W))
     val mem_en_LS_Type_reg = Reg(UInt(5.W))
-    val sys_message_reg = Reg(UInt(3.W))
+    val sys_message_reg = Reg(UInt(4.W))
 
     val handshake_de = io.in.valid && io.in.ready
     when(handshake_de) {

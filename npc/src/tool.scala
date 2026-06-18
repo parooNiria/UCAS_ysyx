@@ -18,7 +18,7 @@ class MessageID extends Bundle {
     val write_data = Output(UInt(32.W))
     val reg_csr_mem_en_dest = Output(UInt(8.W))
     val mem_en_LS_Type = Output(UInt(5.W))
-    val sys_message = Output(UInt(3.W))
+    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
 }
 
 class MessageEXE extends Bundle {
@@ -29,7 +29,7 @@ class MessageEXE extends Bundle {
     val write_data_csr = Output(UInt(32.W))
     val mem_en_LS_Type = Output(UInt(5.W))
     val reg_csr_mem_en_dest = Output(UInt(8.W))
-    val sys_message = Output(UInt(3.W))
+    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
     val device_access = Output(Bool())
 }
 
@@ -40,7 +40,7 @@ class MessageMEM extends Bundle {
     val reg_write_data = Output(UInt(32.W))
     val csr_write_data = Output(UInt(32.W))
     val reg_csr_en_dest = Output(UInt(7.W))
-    val sys_message = Output(UInt(3.W))
+    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
     val device_access = Output(Bool())
 }
 
@@ -68,6 +68,7 @@ class CommitInfo extends Bundle {
     val commit_valid = Output(Bool())
     val device_access = Output(Bool())
     val ebreak = Output(Bool())
+    val fencei = Output(Bool())
 }
 
 // class AXI4Lite extends Bundle {

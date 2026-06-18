@@ -40,7 +40,7 @@ class MEMU extends Module {
     val write_data_csr_reg = Reg(UInt(32.W))
     val mem_en_LS_Type_reg = Reg(UInt(5.W))
     val reg_csr_mem_en_dest_reg = Reg(UInt(8.W))
-    val sys_message_reg = Reg(UInt(3.W))
+    val sys_message_reg = Reg(UInt(4.W))
     val device_access_reg = Reg(Bool())
     when(handshake_em) {
         inst_reg := io.in.bits.inst
