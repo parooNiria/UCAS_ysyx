@@ -3,6 +3,14 @@ package npc
 import chisel3._
 import chisel3.util._
 
+class ExpMessage extends Bundle {
+    val ebreak = Output(Bool())
+    val ecall = Output(Bool())
+    val inv_inst = Output(Bool())
+    val mret = Output(Bool())
+    val fencei = Output(Bool())
+}
+
 class MessageIF extends Bundle {
     val inst = Output(UInt(32.W))
     val pc = Output(UInt(32.W))
@@ -11,37 +19,37 @@ class MessageIF extends Bundle {
 class MessageID extends Bundle {
     val inst = Output(UInt(32.W))
     val pc = Output(UInt(32.W))
-    val next_branch_pc = Output(UInt(32.W))
+    val next_pc = Output(UInt(32.W))
     val alu_op = Output(UInt(11.W))
     val alu_src1 = Output(UInt(32.W))
     val alu_src2 = Output(UInt(32.W))
     val write_data = Output(UInt(32.W))
     val reg_csr_mem_en_dest = Output(UInt(8.W))
-    val mem_en_LS_Type = Output(UInt(5.W))
-    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
+    val mem_en_LS_Type = Output(UInt(5.W))  
+    val ExpMessage = new ExpMessage
 }
 
 class MessageEXE extends Bundle {
     val inst = Output(UInt(32.W))
     val pc = Output(UInt(32.W))
-    val next_branch_pc = Output(UInt(32.W))
+    val next_pc = Output(UInt(32.W))
     val alu_result = Output(UInt(32.W))
     val write_data_csr = Output(UInt(32.W))
     val mem_en_LS_Type = Output(UInt(5.W))
     val reg_csr_mem_en_dest = Output(UInt(8.W))
-    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
     val device_access = Output(Bool())
+    val ExpMessage = new ExpMessage
 }
 
 class MessageMEM extends Bundle {
     val inst = Output(UInt(32.W))
     val pc = Output(UInt(32.W))
-    val next_branch_pc = Output(UInt(32.W))
+    val next_pc = Output(UInt(32.W))
     val reg_write_data = Output(UInt(32.W))
     val csr_write_data = Output(UInt(32.W))
     val reg_csr_en_dest = Output(UInt(7.W))
-    val sys_message = Output(UInt(4.W))   // {fencei, ecall, ebreak, mret}
     val device_access = Output(Bool())
+    val ExpMessage = new ExpMessage()
 }
 
 class rf_read extends Bundle {
@@ -62,13 +70,25 @@ class CommitInfo extends Bundle {
     val inst = Output(UInt(32.W))
     val pc = Output(UInt(32.W))
     val next_pc = Output(UInt(32.W))
+
     val reg_dest = Output(UInt(5.W))
     val reg_write_data = Output(UInt(32.W))
     val reg_we_en = Output(Bool())
+
+    val flush_valid = Output(Bool())
+    val flush_pc = Output(UInt(32.W))
+
     val commit_valid = Output(Bool())
     val device_access = Output(Bool())
     val ebreak = Output(Bool())
     val fencei = Output(Bool())
+}
+
+class reg_forward extends Bundle {
+    val reg_forward_data = Output(UInt(32.W))
+    val reg_data_en = Output(Bool())
+    val reg_dest = Output(UInt(5.W))
+    val ref_dest_en = Output(Bool())
 }
 
 // class AXI4Lite extends Bundle {

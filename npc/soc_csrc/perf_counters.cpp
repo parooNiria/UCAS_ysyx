@@ -11,9 +11,6 @@ static uint64_t perf_cycle = 0;
 
 // ── IFU counters ──
 static uint64_t cnt_ifu_fetch       = 0;
-static uint64_t cnt_ifu_stall_ar    = 0;
-static uint64_t cnt_ifu_stall_r     = 0;
-static uint64_t cnt_ifu_stall_bp    = 0;
 
 // ── IDU instruction category counters ──
 static uint64_t cnt_idu_compute     = 0;
@@ -136,25 +133,6 @@ void perf_print_report() {
     if (cnt_idu_system > 0)
         printf("  System   : avg %6.2f cycles\n", (double)cat_system_cycles  / cnt_idu_system);
 
-    // ── IFU stall analysis ──
-    uint64_t cnt_ifu_total_stalls = cnt_ifu_stall_ar + cnt_ifu_stall_r + cnt_ifu_stall_bp;
-    printf("\033[36m--- IFU Stall Analysis ---\033[0m\n");
-    printf("  IFU fetched:        %llu\n", (unsigned long long)cnt_ifu_fetch);
-    if (perf_cycle > 0) {
-        printf("  Stall AR (AXI wait):  %8llu  (%5.1f%% of cycles)\n",
-               (unsigned long long)cnt_ifu_stall_ar, 100.0 * cnt_ifu_stall_ar / perf_cycle);
-        printf("  Stall R  (AXI data):  %8llu  (%5.1f%% of cycles)\n",
-               (unsigned long long)cnt_ifu_stall_r,  100.0 * cnt_ifu_stall_r  / perf_cycle);
-        printf("  Stall BP (backpres):  %8llu  (%5.1f%% of cycles)\n",
-               (unsigned long long)cnt_ifu_stall_bp, 100.0 * cnt_ifu_stall_bp / perf_cycle);
-    }
-    if (cnt_ifu_total_stalls > 0) {
-        printf("  -- Breakdown: AR=%.1f%%, R=%.1f%%, BP=%.1f%%\n",
-               100.0 * cnt_ifu_stall_ar / cnt_ifu_total_stalls,
-               100.0 * cnt_ifu_stall_r  / cnt_ifu_total_stalls,
-               100.0 * cnt_ifu_stall_bp / cnt_ifu_total_stalls);
-    }
-
     // ── ICache AMAT ──
     uint64_t icache_misses = cnt_icache_access - cnt_icache_hit;
     double icache_hit_rate = (cnt_icache_access > 0)
@@ -196,9 +174,6 @@ void perf_print_report() {
 // ===========================================================================
 extern "C" void dpi_perf_event(
     int ifu_fetch,
-    int ifu_stall_ar,
-    int ifu_stall_r,
-    int ifu_stall_bp,
     int idu_compute,
     int idu_branch,
     int idu_jump,
@@ -220,9 +195,6 @@ extern "C" void dpi_perf_event(
 
     // ── IFU events ──
     if (ifu_fetch)    cnt_ifu_fetch++;
-    if (ifu_stall_ar) cnt_ifu_stall_ar++;
-    if (ifu_stall_r)  cnt_ifu_stall_r++;
-    if (ifu_stall_bp) cnt_ifu_stall_bp++;
 
     // ── ICache events ──
     if (icache_access)     cnt_icache_access++;

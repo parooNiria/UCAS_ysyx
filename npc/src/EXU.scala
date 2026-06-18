@@ -6,6 +6,8 @@ class EXU extends Module {
     val io = IO(new Bundle {
         val in = Flipped(Decoupled(new MessageID))
         val out = Decoupled(new MessageEXE)
+        val reg_forward = new reg_forward
+        val exp_status = Output(Bool())
         
         val awaddr  = Output(UInt(32.W))
         val awvalid = Output(Bool())
@@ -37,28 +39,29 @@ class EXU extends Module {
     
     val inst_reg = Reg(UInt(32.W))
     val pc_reg = Reg(UInt(32.W))
-    val next_branch_pc_reg = Reg(UInt(32.W))
+    val next_pc_reg = Reg(UInt(32.W))
     val alu_op_reg = Reg(UInt(11.W))
     val alu_src1_reg = Reg(UInt(32.W))
     val alu_src2_reg = Reg(UInt(32.W))
     val write_data_reg = Reg(UInt(32.W))
     val reg_csr_mem_en_dest_reg = Reg(UInt(8.W))
     val mem_en_LS_Type_reg = Reg(UInt(5.W))
-    val sys_message_reg = Reg(UInt(4.W))
+    val ExpMessage_reg = Reg(new ExpMessage)
 
     val handshake_de = io.in.valid && io.in.ready
     when(handshake_de) {
         inst_reg := io.in.bits.inst
         pc_reg := io.in.bits.pc
-        next_branch_pc_reg := io.in.bits.next_branch_pc
+        next_pc_reg := io.in.bits.next_pc
         alu_op_reg := io.in.bits.alu_op
         alu_src1_reg := io.in.bits.alu_src1
         alu_src2_reg := io.in.bits.alu_src2
         write_data_reg := io.in.bits.write_data
         reg_csr_mem_en_dest_reg := io.in.bits.reg_csr_mem_en_dest
         mem_en_LS_Type_reg := io.in.bits.mem_en_LS_Type
-        sys_message_reg := io.in.bits.sys_message
+        ExpMessage_reg := io.in.bits.ExpMessage
     }
+    val ExpStatus_in = ExpMessage_reg.ecall || ExpMessage_reg.ebreak || ExpMessage_reg.mret || ExpMessage_reg.fencei || ExpMessage_reg.inv_inst
     
     val handshake_ew = io.out.valid && io.out.ready
 
@@ -68,7 +71,7 @@ class EXU extends Module {
     } .elsewhen(!handshake_de && handshake_ew) {
         valid := false.B
     }
-
+    io.exp_status := ExpStatus_in && valid
     val alu = Module(new ALU)
     alu.io.alu_op := alu_op_reg
     alu.io.alu_src1 := alu_src1_reg
@@ -132,7 +135,7 @@ class EXU extends Module {
         }
     }
     io.araddr := addr
-    io.arvalid := (state_read === sReadReq) && valid
+    io.arvalid := (state_read === sReadReq) && valid && !ExpStatus_in
     io.arid := 1.U
     io.arlen := 0.U
     val is_lb = func3 === "b000".U
@@ -214,7 +217,7 @@ class EXU extends Module {
     io.wlast := state_write === sWriteData || state_write === sWriteAddr || (state_write === sWriteReq )
     io.arvalid := (state_read === sReadReq)
     
-    io.out.valid := valid && (!mem_en_reg || 
+    io.out.valid := valid && ((!(mem_en_reg && !ExpStatus_in)) || 
     (is_load && ((state_read === sReadWait)||(state_read === sReadReq && io.arready))
     )|| (!is_load && ((state_write === sWriteWait)||(state_write === sWriteReq && aw_handshake && w_handshake)
     ||(state_write === sWriteData && w_handshake)|| (state_write === sWriteAddr && aw_handshake))))
@@ -230,13 +233,18 @@ class EXU extends Module {
     io.out.bits.device_access := is_device_access
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg
-    io.out.bits.next_branch_pc := next_branch_pc_reg
+    io.out.bits.next_pc := next_pc_reg
     io.out.bits.alu_result := alu.io.alu_result
     io.out.bits.write_data_csr := write_data_reg
     io.out.bits.mem_en_LS_Type := mem_en_LS_Type_reg
     io.out.bits.reg_csr_mem_en_dest := reg_csr_mem_en_dest_reg
-    io.out.bits.sys_message := sys_message_reg
     io.in.ready := !valid || (io.out.valid && io.out.ready)
+    io.out.bits.ExpMessage := ExpMessage_reg
+    io.reg_forward.reg_forward_data := alu.io.alu_result
+    io.reg_forward.reg_data_en := valid && !mem_en_reg && !reg_csr_mem_en_dest_reg(7)
+    io.reg_forward.reg_dest := reg_csr_mem_en_dest_reg(4, 0)
+    io.reg_forward.ref_dest_en := valid &&reg_csr_mem_en_dest_reg(5)
+
 
     // ── Performance counter events ──
     val exu_fire = io.out.valid && io.out.ready

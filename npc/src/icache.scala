@@ -71,7 +71,7 @@ class ICache(
                   Mux(io.if_req.req_valid, sLookup, sIDLE))
   } .elsewhen (state === sLookup) {
     next_state := Mux(!cache_hit, sReplace,
-                  Mux(cache_hit, sIDLE,
+                  Mux(cache_fence, sIDLE,
                   Mux(io.if_req.req_valid, sLookup, sIDLE)))
   } .elsewhen (state === sReplace) {
     next_state := Mux(io.axi.arvalid && io.axi.arready, sRefill, sReplace)

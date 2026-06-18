@@ -19,6 +19,12 @@ class IDU extends Module {
         val in = Flipped(Decoupled(new MessageIF))
         val out = Decoupled(new MessageID)
         val rf_read = new rf_read
+        val flush_valid_in = Input(Bool())
+        val flush_re_pc = Output(UInt(32.W))
+        val flush_valid_out = Output(Bool())
+        val reg_forward_exe = Flipped(new reg_forward)
+        val reg_forward_mem = Flipped(new reg_forward)
+        val reg_forward_wb = Flipped(new reg_forward)
         // Performance counter event outputs (pulsed on out.fire)
         val perf_events = Output(new IDUPerfEvents)
     })
@@ -28,7 +34,10 @@ class IDU extends Module {
     val handshake_de = Wire(Bool())
     handshake_de := io.in.valid && io.in.ready
     handshake_fd := io.out.valid && io.out.ready
-    when(handshake_de) {
+    
+    when(io.flush_valid_in) {
+        valid := false.B
+    }.elsewhen(handshake_de) {
         valid := true.B
     } .elsewhen(handshake_fd) {
         valid := false.B
@@ -143,9 +152,58 @@ class IDU extends Module {
     io.rf_read.raddr1 := rs1
     io.rf_read.raddr2 := rs2
 
-    io.out.bits := 0.U.asTypeOf(new MessageID)
+    //接受到指令，得到译码，开始分析产生信号
+    //首先产生是否存在寄存器冲突的信号
+    val no_need_rs1 = Wire(Bool())
+    val no_need_rs2 = Wire(Bool())
+    //jal,lui,auipc,sys，crsi
+    no_need_rs1 := is_u | is_j | is_sys | (is_csr && func3(2))
+    //csr,sys,u型，I型
+    no_need_rs2 := is_i | is_sys | is_u | is_csr
+
+    val rs1_same_with_exe = Wire(Bool())
+    val rs1_same_with_mem = Wire(Bool())
+    val rs1_same_with_wb  = Wire(Bool())
+    val rs2_same_with_exe = Wire(Bool())
+    val rs2_same_with_mem = Wire(Bool())
+    val rs2_same_with_wb  = Wire(Bool())
+    val rs1_confict_with_exe = Wire(Bool())
+    val rs1_confict_with_mem = Wire(Bool())
+    val rs2_confict_with_exe = Wire(Bool())
+    val rs2_confict_with_mem = Wire(Bool())
+    val rs1_confict = Wire(Bool())
+    val rs2_confict = Wire(Bool())
+
+    rs1_same_with_exe := rs1 =/= 0.U && rs1 === io.reg_forward_exe.reg_dest && io.reg_forward_exe.ref_dest_en
+    rs1_same_with_mem := rs1 =/= 0.U && rs1 === io.reg_forward_mem.reg_dest && io.reg_forward_mem.ref_dest_en
+    rs1_same_with_wb := rs1 =/= 0.U && rs1 === io.reg_forward_wb.reg_dest && io.reg_forward_wb.ref_dest_en
+    rs2_same_with_exe := rs2 =/= 0.U && rs2 === io.reg_forward_exe.reg_dest && io.reg_forward_exe.ref_dest_en
+    rs2_same_with_mem := rs2 =/= 0.U && rs2 === io.reg_forward_mem.reg_dest && io.reg_forward_mem.ref_dest_en
+    rs2_same_with_wb := rs2 =/= 0.U && rs2 === io.reg_forward_wb.reg_dest && io.reg_forward_wb.ref_dest_en
+
+    rs1_confict_with_exe := rs1_same_with_exe && !io.reg_forward_exe.reg_data_en
+    rs1_confict_with_mem := rs1_same_with_mem && !io.reg_forward_mem.reg_data_en
+    rs2_confict_with_exe := rs2_same_with_exe && !io.reg_forward_exe.reg_data_en
+    rs2_confict_with_mem := rs2_same_with_mem && !io.reg_forward_mem.reg_data_en
 
 
+    rs1_confict := rs1_confict_with_exe || rs1_confict_with_mem
+    rs2_confict := rs2_confict_with_exe || rs2_confict_with_mem 
+    val data_conflict = (rs1_confict && !no_need_rs1) || (rs2_confict && !no_need_rs2)
+
+    val rdata_rs1 = Wire(UInt(32.W))
+    val rdata_rs2 = Wire(UInt(32.W))
+
+    rdata_rs1 := Mux(rs1_same_with_exe && io.reg_forward_exe.reg_data_en, io.reg_forward_exe.reg_forward_data,
+                Mux(rs1_same_with_mem && io.reg_forward_mem.reg_data_en, io.reg_forward_mem.reg_forward_data,
+                Mux(rs1_same_with_wb && io.reg_forward_wb.reg_data_en, io.reg_forward_wb.reg_forward_data,
+                io.rf_read.rdata1)))
+    rdata_rs2 := Mux(rs2_same_with_exe && io.reg_forward_exe.reg_data_en, io.reg_forward_exe.reg_forward_data,
+                Mux(rs2_same_with_mem && io.reg_forward_mem.reg_data_en, io.reg_forward_mem.reg_forward_data,
+                Mux(rs2_same_with_wb && io.reg_forward_wb.reg_data_en, io.reg_forward_wb.reg_forward_data,
+                io.rf_read.rdata2)))
+
+    //其次开始分析控制流相关的部分
     val imm          = Wire(UInt(32.W))
     val br_offs      = Wire(UInt(32.W))
     val jal_offs     = Wire(UInt(32.W))
@@ -163,22 +221,22 @@ class IDU extends Module {
                         Cat(Fill(20, inst_reg(31)), inst_reg(31, 20)))
     
     val seq_pc = pc_reg + 4.U
-    val rs1_eq_rs2 = io.rf_read.rdata1 === io.rf_read.rdata2
-    val rs1_lt_rs2 = io.rf_read.rdata1.asSInt < io.rf_read.rdata2.asSInt
-    val rs1_ltu_rs2 = io.rf_read.rdata1 < io.rf_read.rdata2
+    val rs1_eq_rs2 = rdata_rs1 === rdata_rs2
+    val rs1_lt_rs2 = rdata_rs1.asSInt < rdata_rs2.asSInt
+    val rs1_ltu_rs2 = rdata_rs1 < rdata_rs2
     br_taken := Mux(inst_beq, rs1_eq_rs2,
                 Mux(inst_bne, !rs1_eq_rs2,
                 Mux(inst_blt, rs1_lt_rs2,
                 Mux(inst_bge, !rs1_lt_rs2,
                 Mux(inst_bltu, rs1_ltu_rs2,
                 Mux(inst_bgeu, !rs1_ltu_rs2, false.B))))))||
-                is_j || (inst_jalr) 
+                is_j || (inst_jalr)
                       
-   
     br_target := Mux(is_b, pc_reg + br_offs,
-                Mux(inst_jalr, (io.rf_read.rdata1 + jal_offs) & ~1.U(32.W),
+                Mux(inst_jalr, (rdata_rs1 + jal_offs) & ~1.U(32.W),
                 Mux(is_j, pc_reg + jal_offs, 0.U)))
-    io.out.bits.next_branch_pc := Mux(br_taken, br_target, seq_pc)
+
+    //此次开始分析执行流相关的部分
     when(opcode === "b0110111".U) { 
         io.out.bits.alu_op := 1.U << 10 
     } // LUI
@@ -190,7 +248,7 @@ class IDU extends Module {
         .elsewhen(func3 === 4.U) { io.out.bits.alu_op := 1.U << 6 }
         .elsewhen(func3 === 5.U) { io.out.bits.alu_op := Mux(func7(5), 1.U << 9, 1.U << 8) }
         .elsewhen(func3 === 6.U) { io.out.bits.alu_op := 1.U << 5 }
-        .elsewhen(func3 === 7.U) { io.out.bits.alu_op := 1.U << 4 }
+        .otherwise { io.out.bits.alu_op := 1.U << 4 }
     }
     .elsewhen(opcode === "b0010011".U) {
         when(func3 === 0.U) { io.out.bits.alu_op := 1.U << 0 }
@@ -200,28 +258,39 @@ class IDU extends Module {
         .elsewhen(func3 === 4.U) { io.out.bits.alu_op := 1.U << 6 }
         .elsewhen(func3 === 5.U) { io.out.bits.alu_op := Mux(func7(5), 1.U << 9, 1.U << 8) }
         .elsewhen(func3 === 6.U) { io.out.bits.alu_op := 1.U << 5 }
-        .elsewhen(func3 === 7.U) { io.out.bits.alu_op := 1.U << 4 }
+        .otherwise { io.out.bits.alu_op := 1.U << 4 }
     }
     .otherwise {
         io.out.bits.alu_op := 1.U << 0 // 默认 Add
     }
     val src1_is_pc = is_u | is_j | inst_jalr //lui不用src1，所以可以is_u
     val src2_is_imm = is_i | is_s | is_u | is_j
-    io.out.bits.alu_src1 := Mux(src1_is_pc, pc_reg, io.rf_read.rdata1)
-    io.out.bits.alu_src2 := Mux(src2_is_imm, imm, io.rf_read.rdata2)
+    io.out.bits.alu_src1 := Mux(src1_is_pc, pc_reg, rdata_rs1)
+    io.out.bits.alu_src2 := Mux(src2_is_imm, imm, rdata_rs2)
     //可能是csr中来自imm的值，csr来自rs1的值用于存入csr
     //store中来自rs2的值
     val imm_csr = Cat(Fill(27, 0.U), rs1)
-    val csr_write_data = Mux(!func3(2), io.rf_read.rdata1, imm_csr) // csrrw和csrrwi
-    io.out.bits.write_data := Mux(is_csr, csr_write_data, io.rf_read.rdata2)
+    val csr_write_data = Mux(!func3(2), rdata_rs1, imm_csr) // csrrw和csrrwi
+    io.out.bits.write_data := Mux(is_csr, csr_write_data, rdata_rs2)
     val gr_we = !is_s && !is_b && !is_sys
     io.out.bits.reg_csr_mem_en_dest := Cat(is_csr, is_load, gr_we, rd)
     io.out.bits.mem_en_LS_Type := Cat(is_load|is_store, is_load, func3)
-    io.out.bits.sys_message := Cat(inst_fencei, inst_ecall, inst_ebreak, inst_mret)
-    io.out.valid := valid
+
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg
-    io.in.ready := 1.B
+    io.out.bits.next_pc := Mux(br_taken, br_target, pc_reg + 4.U)
+    io.in.ready := !valid || (io.out.valid && io.out.ready)
+    io.out.valid := !data_conflict && valid && !io.flush_valid_in
+
+    val exp_status = inst_inv || inst_ebreak | inst_ecall | inst_fencei | inst_mret
+    io.flush_valid_out := valid && (br_taken || exp_status) && !data_conflict
+    io.flush_re_pc := br_target
+    io.out.bits.ExpMessage.ebreak := inst_ebreak
+    io.out.bits.ExpMessage.ecall := inst_ecall
+    io.out.bits.ExpMessage.mret := inst_mret
+    io.out.bits.ExpMessage.fencei := inst_fencei
+    io.out.bits.ExpMessage.inv_inst := inst_inv
+
 
     // ── Performance counter events: pulse on out.fire ──
     val idu_fire = io.out.valid && io.out.ready

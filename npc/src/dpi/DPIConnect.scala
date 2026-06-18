@@ -35,9 +35,6 @@ class DPIConnect extends Module {
 
     // ── PerfEventDPI: IFU ──
     val ifu_fetch      = Input(Bool())
-    val ifu_stall_ar   = Input(Bool())
-    val ifu_stall_r    = Input(Bool())
-    val ifu_stall_bp   = Input(Bool())
 
     // ── PerfEventDPI: IDU ──
     val idu_compute    = Input(Bool())
@@ -101,9 +98,6 @@ class DPIConnect extends Module {
   val perf_dpi = Module(new PerfEventDPI)
   perf_dpi.io.clk := clock
   perf_dpi.io.ifu_fetch      := io.ifu_fetch
-  perf_dpi.io.ifu_stall_ar   := io.ifu_stall_ar
-  perf_dpi.io.ifu_stall_r    := io.ifu_stall_r
-  perf_dpi.io.ifu_stall_bp   := io.ifu_stall_bp
   perf_dpi.io.idu_compute    := io.idu_compute
   perf_dpi.io.idu_branch     := io.idu_branch
   perf_dpi.io.idu_jump       := io.idu_jump

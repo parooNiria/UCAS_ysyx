@@ -39,7 +39,7 @@ extern "C" {
                   int r24,int r25,int r26,int r27,int r28,int r29,int r30,int r31,
                   int last_inst, int next_pc, int last_pc, int device_type);
   void dpi_init  (int dbg_mstatus, int dbg_mtvec, int dbg_mepc, int dbg_mcause, int dbg_pc);
-  void dpi_perf_event(int ifu_fetch, int ifu_stall_ar, int ifu_stall_r, int ifu_stall_bp,
+  void dpi_perf_event(int ifu_fetch,
                       int idu_compute, int idu_branch, int idu_jump, int idu_load,
                       int idu_store, int idu_csr, int idu_system,
                       int exu_compute, int exu_load_issue, int exu_store_issue,

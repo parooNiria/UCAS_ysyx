@@ -133,13 +133,13 @@ extern "C" void dpi_init(int dbg_mstatus, int dbg_mtvec, int dbg_mepc,
 }
 
 extern "C" void dpi_perf_event(
-    int ifu_fetch, int ifu_stall_ar, int ifu_stall_r, int ifu_stall_bp,
+    int ifu_fetch,
     int idu_compute, int idu_branch, int idu_jump, int idu_load, int idu_store,
     int idu_csr, int idu_system,
     int exu_compute, int exu_load_issue, int exu_store_issue,
     int lsu_load_done, int lsu_store_done, int wbu_commit,
     int icache_access, int icache_hit, int icache_miss_cycle) {
-  (void)ifu_fetch; (void)ifu_stall_ar; (void)ifu_stall_r; (void)ifu_stall_bp;
+  (void)ifu_fetch;
   (void)idu_compute; (void)idu_branch; (void)idu_jump; (void)idu_load; (void)idu_store;
   (void)idu_csr; (void)idu_system;
   (void)exu_compute; (void)exu_load_issue; (void)exu_store_issue;

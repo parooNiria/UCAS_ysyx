@@ -77,7 +77,8 @@ class REFcommitDPI extends ExtModule {
     |    input int dbg_rf24, input int dbg_rf25, input int dbg_rf26,
     |    input int dbg_rf27, input int dbg_rf28, input int dbg_rf29,
     |    input int dbg_rf30, input int dbg_rf31,
-    |    input int last_inst, input int next_pc,
+    |    input int last_inst,
+    |    input int next_pc,
     |    input int last_pc, input int device_type
     |  );
     |

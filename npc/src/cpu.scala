@@ -18,14 +18,12 @@ class cpu extends Module {
   val rf = Module(new RegisterFile)
   val icache = Module(new ICache)  // I-Cache between IFU and AXI
 
-  ifu.io.commit_info.commit_valid := wbu.io.out.commit_valid
-  ifu.io.commit_info.next_pc := wbu.io.out.next_pc
-
   idu.io.in <> ifu.io.out
   exu.io.in <> idu.io.out
   memu.io.in <> exu.io.out
   wbu.io.in <> memu.io.out
 
+  // ── Register file ──
   rf.io.raddr1 := idu.io.rf_read.raddr1
   rf.io.raddr2 := idu.io.rf_read.raddr2
   idu.io.rf_read.rdata1 := rf.io.rdata1
@@ -34,6 +32,18 @@ class cpu extends Module {
   rf.io.wen := wbu.io.out.reg_we_en && wbu.io.out.commit_valid
   rf.io.waddr := wbu.io.out.reg_dest
   rf.io.wdata := wbu.io.out.reg_write_data
+
+  // ── Flush routing ──
+  // IDU branch flush (br_taken, JAL, JALR) → earliest redirect to IFU
+  // WBU exception flush (ecall, ebreak, mret, fencei, inv_inst) → full pipeline flush
+  ifu.io.flush_valid := idu.io.flush_valid_out || wbu.io.out.flush_valid || exu.io.exp_status || memu.io.exp_status
+  ifu.io.flush_pc     := Mux(wbu.io.out.flush_valid, wbu.io.out.flush_pc, idu.io.flush_re_pc)
+  idu.io.flush_valid_in := wbu.io.out.flush_valid || exu.io.exp_status || memu.io.exp_status
+
+  // ── Data forwarding ──
+  idu.io.reg_forward_exe <> exu.io.reg_forward
+  idu.io.reg_forward_mem <> memu.io.reg_forward
+  idu.io.reg_forward_wb  <> wbu.io.reg_forward
 
   // IFU → ICache → AXI
   icache.io.if_req <> ifu.io.if_sram
@@ -128,9 +138,6 @@ class cpu extends Module {
 
   // PerfEventDPI: IFU
   dpi.io.ifu_fetch      := ifu.io.out.valid && ifu.io.out.ready
-  dpi.io.ifu_stall_ar   := ifu.io.perf_stall.stall_ar
-  dpi.io.ifu_stall_r    := ifu.io.perf_stall.stall_r
-  dpi.io.ifu_stall_bp   := ifu.io.perf_stall.stall_bp
 
   // PerfEventDPI: IDU
   dpi.io.idu_compute    := idu.io.perf_events.compute

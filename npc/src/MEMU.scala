@@ -6,6 +6,8 @@ class MEMU extends Module {
     val io = IO(new Bundle {
         val in = Flipped(Decoupled(new MessageEXE))
         val out = Decoupled(new MessageMEM)
+        val reg_forward = new reg_forward
+        val exp_status = Output(Bool())
         
         val rdata  = Input(UInt(32.W))
         val rresp  = Input(UInt(2.W))
@@ -35,24 +37,27 @@ class MEMU extends Module {
 
     val inst_reg = Reg(UInt(32.W))
     val pc_reg = Reg(UInt(32.W))
-    val next_branch_pc_reg = Reg(UInt(32.W))
+    val next_pc_reg = Reg(UInt(32.W))
     val alu_result_reg = Reg(UInt(32.W))
     val write_data_csr_reg = Reg(UInt(32.W))
     val mem_en_LS_Type_reg = Reg(UInt(5.W))
     val reg_csr_mem_en_dest_reg = Reg(UInt(8.W))
-    val sys_message_reg = Reg(UInt(4.W))
+    val ExpMessage_reg = Reg(new ExpMessage)
     val device_access_reg = Reg(Bool())
     when(handshake_em) {
         inst_reg := io.in.bits.inst
         pc_reg := io.in.bits.pc
-        next_branch_pc_reg := io.in.bits.next_branch_pc
+        next_pc_reg := io.in.bits.next_pc
         alu_result_reg := io.in.bits.alu_result
         write_data_csr_reg := io.in.bits.write_data_csr
         mem_en_LS_Type_reg := io.in.bits.mem_en_LS_Type
         reg_csr_mem_en_dest_reg := io.in.bits.reg_csr_mem_en_dest
-        sys_message_reg := io.in.bits.sys_message
         device_access_reg := io.in.bits.device_access
+        ExpMessage_reg := io.in.bits.ExpMessage
     }
+
+    val ExpStatus_in = ExpMessage_reg.ebreak || ExpMessage_reg.ecall || ExpMessage_reg.inv_inst || ExpMessage_reg.mret || ExpMessage_reg.fencei
+    io.exp_status := ExpStatus_in && valid
 
     val mem_en = mem_en_LS_Type_reg(4)
     val is_load = mem_en_LS_Type_reg(3) && mem_en
@@ -85,10 +90,10 @@ class MEMU extends Module {
 
     io.rready := is_load && !load_already_saved
     io.bready := is_store && !store_already_responded
-    io.out.valid := valid && (!mem_en || (is_load && (rdata_recieve || load_already_saved)) || (is_store && bresp_recieve && io.bresp === 0.U))
+    io.out.valid := valid && ((!(mem_en && !ExpStatus_in)) || (is_load && (rdata_recieve || load_already_saved)) || (is_store && bresp_recieve && io.bresp === 0.U))
     io.out.bits.inst := inst_reg
     io.out.bits.pc := pc_reg
-    io.out.bits.next_branch_pc := next_branch_pc_reg
+    io.out.bits.next_pc := next_pc_reg
 
     val rdata = Mux(load_already_saved, load_data, io.rdata)
     val read_data_b = Mux(alu_result_reg(1, 0) === "b00".U, rdata(7, 0),
@@ -105,9 +110,13 @@ class MEMU extends Module {
     io.out.bits.reg_write_data := Mux(is_load, read_data, alu_result_reg)
     io.out.bits.csr_write_data := write_data_csr_reg
     io.out.bits.reg_csr_en_dest := Cat(reg_csr_mem_en_dest_reg(7), reg_csr_mem_en_dest_reg(5, 0))
-    io.out.bits.sys_message := sys_message_reg
+    io.out.bits.ExpMessage := ExpMessage_reg
     io.in.ready := !valid || (io.out.valid && io.out.ready)
     io.out.bits.device_access := device_access_reg
+    io.reg_forward.reg_forward_data := io.out.bits.reg_write_data
+    io.reg_forward.reg_data_en := valid && (!is_load  || (load_already_saved || rdata_recieve)) && !reg_csr_mem_en_dest_reg(7)
+    io.reg_forward.reg_dest := reg_csr_mem_en_dest_reg(4, 0)
+    io.reg_forward.ref_dest_en := valid &&reg_csr_mem_en_dest_reg(5)
 
     // ── Performance counter events ──
     io.perf_load  := is_load  && io.rvalid && io.rid === 1.U && io.rlast

@@ -14,9 +14,6 @@ class PerfEventDPI extends ExtModule {
 
     // IFU events
     val ifu_fetch      = Input(Bool())
-    val ifu_stall_ar   = Input(Bool())
-    val ifu_stall_r    = Input(Bool())
-    val ifu_stall_bp   = Input(Bool())
 
     // IDU decode events (category pulses)
     val idu_compute    = Input(Bool())
@@ -50,9 +47,6 @@ class PerfEventDPI extends ExtModule {
     |module PerfEventDPI(
     |    input         clk,
     |    input         ifu_fetch,
-    |    input         ifu_stall_ar,
-    |    input         ifu_stall_r,
-    |    input         ifu_stall_bp,
     |    input         idu_compute,
     |    input         idu_branch,
     |    input         idu_jump,
@@ -73,9 +67,6 @@ class PerfEventDPI extends ExtModule {
     |
     |  import "DPI-C" function void dpi_perf_event(
     |    input int  ifu_fetch,
-    |    input int  ifu_stall_ar,
-    |    input int  ifu_stall_r,
-    |    input int  ifu_stall_bp,
     |    input int  idu_compute,
     |    input int  idu_branch,
     |    input int  idu_jump,
@@ -97,9 +88,6 @@ class PerfEventDPI extends ExtModule {
     |  always @(posedge clk) begin
     |    dpi_perf_event(
     |      {31'd0, ifu_fetch},
-    |      {31'd0, ifu_stall_ar},
-    |      {31'd0, ifu_stall_r},
-    |      {31'd0, ifu_stall_bp},
     |      {31'd0, idu_compute},
     |      {31'd0, idu_branch},
     |      {31'd0, idu_jump},
