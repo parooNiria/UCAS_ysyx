@@ -1,0 +1,285 @@
+From 20e7cb728cc7f55b75bc8f495fbd08cd4c99c0fc Mon Sep 17 00:00:00 2001
+From: parooNiria <paroniria2025@163.com>
+Date: Sat, 4 Jul 2026 14:28:48 +0300
+Subject: [PATCH] ysyx: adapt AM for NPC simulation
+
+---
+ bsp/abstract-machine/extra.ld      |  11 ++-
+ bsp/abstract-machine/extra_base.ld |  45 ++++++++++
+ bsp/abstract-machine/src/context.c | 138 +++++++++++++++++++++++++++--
+ bsp/abstract-machine/src/uart.c    |   8 +-
+ 4 files changed, 190 insertions(+), 12 deletions(-)
+ create mode 100644 bsp/abstract-machine/extra_base.ld
+
+diff --git a/bsp/abstract-machine/extra.ld b/bsp/abstract-machine/extra.ld
+index 5cdc65670..0d9880a48 100644
+--- a/bsp/abstract-machine/extra.ld
++++ b/bsp/abstract-machine/extra.ld
+@@ -27,9 +27,10 @@ SECTIONS {
+     *(__am_apps.sdata*)
+     __am_apps_data_end = .;
+     . = ALIGN(8);
+-  }
++  } > SRAM AT> FLASH
++  _edata = .;
+ }
+-INSERT BEFORE .data;
++INSERT AFTER .data;
+ 
+ SECTIONS {
+   .bss.extra : {
+@@ -40,6 +41,8 @@ SECTIONS {
+     *(__am_apps.scommon*)
+     __am_apps_bss_end = .;
+     . = ALIGN(8);
+-  }
++  } > SRAM AT> FLASH
++  _ebss = .;
++  _heap_start = ALIGN(0x1000);
+ }
+-INSERT BEFORE .bss;
++INSERT AFTER .bss;
+diff --git a/bsp/abstract-machine/extra_base.ld b/bsp/abstract-machine/extra_base.ld
+new file mode 100644
+index 000000000..5cdc65670
+--- /dev/null
++++ b/bsp/abstract-machine/extra_base.ld
+@@ -0,0 +1,45 @@
++SECTIONS {
++  .data.extra : {
++    /* section information for finsh shell */
++    __fsymtab_start = .;
++    KEEP(*(FSymTab))
++    __fsymtab_end = .;
++    . = ALIGN(8);
++    __vsymtab_start = .;
++    KEEP(*(VSymTab))
++    __vsymtab_end = .;
++    . = ALIGN(8);
++
++    /* section information for initial. */
++    . = ALIGN(8);
++    __rt_init_start = .;
++    KEEP(*(SORT(.rti_fn*)))
++    __rt_init_end = .;
++    . = ALIGN(8);
++
++    __rt_utest_tc_tab_start = .;
++    KEEP(*(UtestTcTab))
++    __rt_utest_tc_tab_end = .;
++
++    . = ALIGN(8);
++    __am_apps_data_start = .;
++    *(__am_apps.data*)
++    *(__am_apps.sdata*)
++    __am_apps_data_end = .;
++    . = ALIGN(8);
++  }
++}
++INSERT BEFORE .data;
++
++SECTIONS {
++  .bss.extra : {
++    . = ALIGN(8);
++    __am_apps_bss_start = .;
++    *(__am_apps.bss*)
++    *(__am_apps.sbss*)
++    *(__am_apps.scommon*)
++    __am_apps_bss_end = .;
++    . = ALIGN(8);
++  }
++}
++INSERT BEFORE .bss;
+diff --git a/bsp/abstract-machine/src/context.c b/bsp/abstract-machine/src/context.c
+index ee38829ae..cebc16b6b 100644
+--- a/bsp/abstract-machine/src/context.c
++++ b/bsp/abstract-machine/src/context.c
+@@ -2,8 +2,85 @@
+ #include <klib.h>
+ #include <rtthread.h>
+ 
++typedef void (*rt_am_entry_t)(void *);
++typedef void (*rt_am_exit_t)(void);
++
++typedef struct {
++  rt_am_entry_t entry;
++  void *parameter;
++  rt_am_exit_t texit;
++} rt_am_stack_boot_t;
++
++typedef struct {
++  uintptr_t magic;
++  rt_ubase_t *from;
++  rt_ubase_t *to;
++  rt_thread_t owner;
++  rt_ubase_t owner_user_data_saved;
++} rt_am_switch_req_t;
++
++static const uintptr_t RT_AM_SWITCH_MAGIC = (uintptr_t)0x52545357u; // 'RTSW'
++
++static void rt_am_thread_entry(void *arg) {
++  rt_am_stack_boot_t *boot = (rt_am_stack_boot_t *)arg;
++  rt_am_entry_t entry = boot->entry;
++  void *parameter = boot->parameter;
++  rt_am_exit_t texit = boot->texit;
++
++  entry(parameter);
++  if (texit != RT_NULL) {
++    texit();
++  }
++
++  // RT-Thread guarantees texit() should not return. Keep this as a hard stop.
++  assert(0);
++  while (1) {
++  }
++}
++
++static rt_am_switch_req_t *rt_am_req_from_thread_userdata(void) {
++  rt_thread_t self = rt_thread_self();
++  if (self == RT_NULL) {
++    return RT_NULL;
++  }
++
++  rt_am_switch_req_t *req = (rt_am_switch_req_t *)(uintptr_t)self->user_data;
++  if (req == RT_NULL || req->magic != RT_AM_SWITCH_MAGIC) {
++    return RT_NULL;
++  }
++  return req;
++}
++
++static void rt_am_do_yield(rt_am_switch_req_t *req) {
++  (void)req;
++  yield();
++}
++
+ static Context* ev_handler(Event e, Context *c) {
+   switch (e.event) {
++    case EVENT_YIELD: {
++      rt_am_switch_req_t *req = rt_am_req_from_thread_userdata();
++
++      if (req != RT_NULL && req->to != RT_NULL) {
++        // Restore owner thread's user_data before leaving this handler.
++        if (req->owner != RT_NULL) {
++          req->owner->user_data = req->owner_user_data_saved;
++        }
++
++        if (req->from != RT_NULL) {
++          *(req->from) = (rt_ubase_t)c;
++        }
++        Context *next = (Context *)(*(req->to));
++        assert(next != RT_NULL);
++        return next;
++      }
++
++      return c;
++    }
++    case EVENT_IRQ_TIMER:
++    case EVENT_IRQ_IODEV:
++    case EVENT_NULL:
++      return c;
+     default: printf("Unhandled event ID = %d\n", e.event); assert(0);
+   }
+   return c;
+@@ -14,18 +91,67 @@ void __am_cte_init() {
+ }
+ 
+ void rt_hw_context_switch_to(rt_ubase_t to) {
+-  assert(0);
++  rt_am_switch_req_t req;
++  rt_thread_t self = rt_thread_self();
++
++  req.magic = RT_AM_SWITCH_MAGIC;
++  req.from = RT_NULL;
++  req.to = (rt_ubase_t *)to;
++  req.owner = self;
++  req.owner_user_data_saved = (self != RT_NULL) ? self->user_data : 0;
++
++  if (self != RT_NULL) {
++    self->user_data = (rt_ubase_t)&req;
++  }
++
++  rt_am_do_yield(&req);
+ }
+ 
+ void rt_hw_context_switch(rt_ubase_t from, rt_ubase_t to) {
+-  assert(0);
++  rt_am_switch_req_t req;
++  rt_thread_t self = rt_thread_self();
++
++  req.magic = RT_AM_SWITCH_MAGIC;
++  req.from = (rt_ubase_t *)from;
++  req.to = (rt_ubase_t *)to;
++  req.owner = self;
++  req.owner_user_data_saved = (self != RT_NULL) ? self->user_data : 0;
++
++  if (self != RT_NULL) {
++    self->user_data = (rt_ubase_t)&req;
++  }
++
++  rt_am_do_yield(&req);
+ }
+ 
+-void rt_hw_context_switch_interrupt(void *context, rt_ubase_t from, rt_ubase_t to, struct rt_thread *to_thread) {
+-  assert(0);
++void rt_hw_context_switch_interrupt(rt_ubase_t from, rt_ubase_t to,
++                                    rt_thread_t from_thread,
++                                    rt_thread_t to_thread) {
++  (void)from_thread;
++  (void)to_thread;
++  rt_hw_context_switch(from, to);
+ }
+ 
+ rt_uint8_t *rt_hw_stack_init(void *tentry, void *parameter, rt_uint8_t *stack_addr, void *texit) {
+-  assert(0);
+-  return NULL;
++  // For downward-growing stacks, RT-Thread passes stack top here.
++  // Align first, then place a per-thread bootstrap record on this stack.
++  uintptr_t sp_top = (uintptr_t)stack_addr;
++  sp_top &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
++
++  uintptr_t boot_addr = sp_top - sizeof(rt_am_stack_boot_t);
++  boot_addr &= ~((uintptr_t)sizeof(uintptr_t) - 1u);
++
++  rt_am_stack_boot_t *boot = (rt_am_stack_boot_t *)boot_addr;
++  boot->entry = (rt_am_entry_t)tentry;
++  boot->parameter = parameter;
++  boot->texit = (rt_am_exit_t)texit;
++
++  Area kstack = {
++    .start = RT_NULL,
++    .end = (void *)boot_addr,
++  };
++
++  Context *ctx = kcontext(kstack, rt_am_thread_entry, (void *)boot);
++  assert(ctx != RT_NULL);
++  return (rt_uint8_t *)ctx;
+ }
+diff --git a/bsp/abstract-machine/src/uart.c b/bsp/abstract-machine/src/uart.c
+index e4eb86689..aa954b75f 100644
+--- a/bsp/abstract-machine/src/uart.c
++++ b/bsp/abstract-machine/src/uart.c
+@@ -11,6 +11,7 @@
+ #include <rtthread.h>
+ #include <am.h>
+ #include <klib.h>
++#include <klib-macros.h>
+ 
+ #define UART_DEFAULT_BAUDRATE 115200
+ 
+@@ -37,8 +38,11 @@ static int _uart_putc(struct rt_serial_device *serial, char c) {
+ }
+ 
+ static int _uart_getc(struct rt_serial_device *serial) {
+-  static const char *p = "help\ndate\nversion\nfree\nps\npwd\nls\nmemtrace\nmemcheck\nutest_list\n";
+-  return (*p != '\0' ? *(p ++) : -1);
++  AM_UART_RX_T rx = io_read(AM_UART_RX);
++  int ch = (int)(signed char)rx.data;
++  return ch;
++  // static const char *p = "help\ndate\nversion\nfree\nps\npwd\nls\nmemtrace\nmemcheck\nutest_list\n";
++  // return (*p != '\0' ? *(p ++) : -1);
+ }
+ 
+ const struct rt_uart_ops _uart_ops = {
+-- 
+2.34.1
+

@@ -1,0 +1,1539 @@
+From 4d7e44594826b83bfce0ecadac5327eef2370967 Mon Sep 17 00:00:00 2001
+From: parooNiria <paroniria2025@163.com>
+Date: Sat, 4 Jul 2026 14:25:44 +0300
+Subject: [PATCH] ysyx: adapt SoC for NPC
+
+---
+ perip/gpio/gpio_top_apb.v                    |  98 +++++++
+ perip/ps2/ps2_top_apb.v                      |  67 +++++
+ perip/psram/efabless/EF_PSRAM_CTRL.v         |   1 +
+ perip/psram/psram.v                          | 149 ++++++++++-
+ perip/sdram/core_sdram_axi4/sdram_axi.v      |   6 +-
+ perip/sdram/core_sdram_axi4/sdram_axi_core.v |  63 ++---
+ perip/sdram/sdram.v                          | 257 ++++++++++++++++++-
+ perip/sdram/sdram_32.v                       |  50 ++++
+ perip/sdram/sdram_top_apb.v                  |   8 +-
+ perip/sdram/sdram_top_axi.v                  |   8 +-
+ perip/spi/rtl/spi_top_apb.v                  | 221 +++++++++++++++-
+ perip/vga/vga_top_apb.v                      | 106 ++++++++
+ src/CPU.scala                                |   4 +-
+ src/SoC.scala                                |  10 +-
+ src/Top.scala                                |   2 +-
+ src/device/BitRev.scala                      |  43 +++-
+ src/device/CLINT.scala                       |  62 +++++
+ src/device/SDRAM.scala                       |  11 +-
+ 18 files changed, 1069 insertions(+), 97 deletions(-)
+ create mode 100644 perip/sdram/sdram_32.v
+ create mode 100644 src/device/CLINT.scala
+
+diff --git a/perip/gpio/gpio_top_apb.v b/perip/gpio/gpio_top_apb.v
+index ec51ffe5..b2366113 100644
+--- a/perip/gpio/gpio_top_apb.v
++++ b/perip/gpio/gpio_top_apb.v
+@@ -1,3 +1,15 @@
++//-----------------------------------------------------------------
++// GPIO Controller (APB slave)
++//
++// Register map:
++//   0x0: LED output (16-bit write)  → gpio_out[15:0]
++//   0x4: Switch input (16-bit read) → gpio_in[15:0]
++//   0x8: 7-segment (32-bit write)   → {seg7,...,seg0}, 4-bit hex per digit
++//   0xc: reserved
++//
++// 7-segment decoding: 4-bit hex → 8-bit segment pattern (active low)
++//-----------------------------------------------------------------
++
+ module gpio_top_apb(
+   input         clock,
+   input         reset,
+@@ -24,4 +36,90 @@ module gpio_top_apb(
+   output [7:0]  gpio_seg_7
+ );
+ 
++  // APB: always ready, no errors
++  assign in_pready  = 1'b1;
++  assign in_pslverr = 1'b0;
++
++  //-----------------------------------------------------------------
++  // Registers
++  //-----------------------------------------------------------------
++  reg [15:0] led_reg;      // offset 0x0
++  reg [31:0] seg_reg;      // offset 0x8 (4 bits × 8 digits)
++
++  assign gpio_out = led_reg;
++
++  //-----------------------------------------------------------------
++  // APB read
++  //-----------------------------------------------------------------
++  wire apb_read  = in_psel && in_penable && !in_pwrite;
++  wire apb_write = in_psel && in_penable &&  in_pwrite;
++
++  reg [31:0] rdata;
++  assign in_prdata = rdata;
++
++  always @(*) begin
++    rdata = 32'd0;
++    if (apb_read) begin
++      case (in_paddr[3:0])
++        4'h0: rdata = {16'd0, led_reg};
++        4'h4: rdata = {16'd0, gpio_in};
++        4'h8: rdata = seg_reg;
++        default: rdata = 32'd0;
++      endcase
++    end
++  end
++
++  //-----------------------------------------------------------------
++  // APB write
++  //-----------------------------------------------------------------
++  always @(posedge clock) begin
++    if (reset) begin
++      led_reg <= 16'd0;
++      seg_reg <= 32'd0;
++    end else if (apb_write) begin
++      case (in_paddr[3:0])
++        4'h0: led_reg <= in_pwdata[15:0];
++        4'h8: seg_reg <= in_pwdata;
++        default: ;
++      endcase
++    end
++  end
++
++  //-----------------------------------------------------------------
++  // 7-segment decoder: 4-bit hex → 8-bit segment (NVBoard: 0=on, 1=off)
++  // Segment bits: {A, B, C, D, E, F, G, DP}
++  //-----------------------------------------------------------------
++  function [7:0] hex2seg;
++    input [3:0] hex;
++    begin
++      case (hex)
++        4'h0: hex2seg = 8'b00000011;  // "0"
++        4'h1: hex2seg = 8'b10011111;  // "1"
++        4'h2: hex2seg = 8'b00100101;  // "2"
++        4'h3: hex2seg = 8'b00001101;  // "3"
++        4'h4: hex2seg = 8'b10011001;  // "4"
++        4'h5: hex2seg = 8'b01001001;  // "5"
++        4'h6: hex2seg = 8'b01000001;  // "6"
++        4'h7: hex2seg = 8'b00011111;  // "7"
++        4'h8: hex2seg = 8'b00000001;  // "8"
++        4'h9: hex2seg = 8'b00001001;  // "9"
++        4'ha: hex2seg = 8'b00010001;  // "A"
++        4'hb: hex2seg = 8'b11000001;  // "b"
++        4'hc: hex2seg = 8'b01100011;  // "C"
++        4'hd: hex2seg = 8'b10000101;  // "d"
++        4'he: hex2seg = 8'b01100001;  // "E"
++        4'hf: hex2seg = 8'b01110001;  // "F"
++      endcase
++    end
++  endfunction
++
++  assign gpio_seg_0 = hex2seg(seg_reg[3:0]);
++  assign gpio_seg_1 = hex2seg(seg_reg[7:4]);
++  assign gpio_seg_2 = hex2seg(seg_reg[11:8]);
++  assign gpio_seg_3 = hex2seg(seg_reg[15:12]);
++  assign gpio_seg_4 = hex2seg(seg_reg[19:16]);
++  assign gpio_seg_5 = hex2seg(seg_reg[23:20]);
++  assign gpio_seg_6 = hex2seg(seg_reg[27:24]);
++  assign gpio_seg_7 = hex2seg(seg_reg[31:28]);
++
+ endmodule
+diff --git a/perip/ps2/ps2_top_apb.v b/perip/ps2/ps2_top_apb.v
+index 080d38fa..cb6e75c5 100644
+--- a/perip/ps2/ps2_top_apb.v
++++ b/perip/ps2/ps2_top_apb.v
+@@ -1,3 +1,14 @@
++//-----------------------------------------------------------------
++// PS2 Keyboard Controller (APB slave) — with 8-deep FIFO
++//
++// Register 0x0: 8-bit scan code (read), 0 if FIFO empty
++//
++// PS2 frame: start(0)+8data(LSB)+parity(odd)+stop(1), 11 bits
++// Sampled on falling edge of PS2_CLK.
++// Parity-checked; invalid frames are discarded.
++// FIFO prevents data loss when CPU doesn't read immediately.
++//-----------------------------------------------------------------
++
+ module ps2_top_apb(
+   input         clock,
+   input         reset,
+@@ -16,4 +27,60 @@ module ps2_top_apb(
+   input         ps2_data
+ );
+ 
++  assign in_pready  = 1'b1;
++  assign in_pslverr = 1'b0;
++
++
++  reg [2:0] ps2_clk_sync;
++  wire      sampling = ps2_clk_sync[2] & ~ps2_clk_sync[1];
++
++  always @(posedge clock) begin
++    if (reset) ps2_clk_sync <= 3'b000;
++    else       ps2_clk_sync <= {ps2_clk_sync[1:0], ps2_clk};
++  end
++
++  reg [9:0]  buffer;     
++  reg [3:0]  count;     
++
++  always @(posedge clock) begin
++    if (reset) begin
++      count  <= 4'd0;
++      buffer <= 10'd0;
++    end else if (sampling) begin
++      if (count == 4'd10) begin
++        if ((buffer[0] == 1'b0) &&          
++            (ps2_data == 1'b1) &&           
++            (^buffer[9:1] == 1'b1)) begin  
++          fifo[w_ptr] <= buffer[8:1];
++          w_ptr       <= w_ptr + 3'd1;
++          overflow    <= overflow | ((w_ptr + 3'd1) == r_ptr);
++        end
++        count <= 4'd0;  
++      end else begin
++        buffer[count] <= ps2_data;
++        count <= count + 4'd1;
++      end
++    end
++  end
++
++  reg [7:0]  fifo[7:0];
++  reg [2:0]  w_ptr, r_ptr;
++  reg        overflow;
++
++  wire fifo_empty = (w_ptr == r_ptr);
++  wire apb_rd    = in_psel && in_penable && !in_pwrite && (in_paddr[3:0] == 4'h0);
++
++  assign in_prdata = (apb_rd && !fifo_empty) ? {24'd0, fifo[r_ptr]} : 32'd0;
++
++  always @(posedge clock) begin
++    if (reset) begin
++      w_ptr    <= 3'd0;
++      r_ptr    <= 3'd0;
++      overflow <= 1'b0;
++    end else if (apb_rd && !fifo_empty) begin
++      r_ptr <= r_ptr + 3'd1;
++    end
++  end
++
+ endmodule
++
+diff --git a/perip/psram/efabless/EF_PSRAM_CTRL.v b/perip/psram/efabless/EF_PSRAM_CTRL.v
+index b6e737e9..c7bbf366 100644
+--- a/perip/psram/efabless/EF_PSRAM_CTRL.v
++++ b/perip/psram/efabless/EF_PSRAM_CTRL.v
+@@ -112,6 +112,7 @@ module PSRAM_READER (
+             //saddr <= {addr[23:2], 2'b0};
+             saddr <= {addr[23:0]};
+ 
++    //8个周期的cmd，6个周期的地址，6个周期的dummy，8个周期的数据
+     // Sample with the negedge of sck
+     wire[1:0] byte_index = {counter[7:1] - 8'd10}[1:0];
+     always @ (posedge clk)
+diff --git a/perip/psram/psram.v b/perip/psram/psram.v
+index d9bdd882..da981bb5 100644
+--- a/perip/psram/psram.v
++++ b/perip/psram/psram.v
+@@ -1,9 +1,148 @@
+-module psram(
+-  input sck,
+-  input ce_n,
+-  inout [3:0] dio
++// IS66WVS4M8ALL PSRAM behavioral model
++// Supports Quad IO Read (EBh) and Quad IO Write (38h) in SPI Mode.
++// Storage array accessed via DPI-C.
++
++module psram (
++  input         sck,
++  input         ce_n,
++  inout  [3:0]  dio
+ );
+ 
+-  assign dio = 4'bz;
++  import "DPI-C" function void psram_read (input int addr, output int data);
++  import "DPI-C" function void psram_write(input int addr, input int data, input int mask);
++
++  wire reset = ce_n;
++  // -------------------------------------------------------------------------
++  // SCK cycle counter
++  // -------------------------------------------------------------------------
++  reg [7:0] cnt;
++  always @(posedge sck or posedge reset) begin
++    if (reset) cnt <= 8'd0;
++    else       cnt <= cnt + 8'd1;
++  end
++
++  // -------------------------------------------------------------------------
++  // Command sampling: 1-bit per SCK, MSB first (cnt = 0 .. 7)
++  // -------------------------------------------------------------------------
++  reg [7:0] cmd;
++  always @(posedge sck or posedge reset) begin
++    if (reset) cmd <= 8'd0;
++    else if (cnt < 8) cmd <= {cmd[6:0], dio[0]};
++  end
++
++  // -------------------------------------------------------------------------
++  // Address sampling: 4-bit per SCK (cnt = 8 .. 13)
++  // -------------------------------------------------------------------------
++  reg [23:0] addr;
++  always @(posedge sck or posedge reset) begin
++    if (reset) addr <= 24'd0;
++    else if (cnt >= 8 && cnt < 14) addr <= {addr[19:0], dio};
++  end
++
++  // -------------------------------------------------------------------------
++  // EBh — Quad IO Read (1-4-4)
++  //   cnt 0..7  : command  (1-bit)
++  //   cnt 8..13 : address  (4-bit / SCK)
++  //   cnt 14..19: dummy cycles (6 SCK), bus released
++  //   cnt 20..27: data     (4-bit / SCK), PSRAM drives bus
++  //
++  //   PSRAM drives data on SCK falling edge.
++  //   rd_shift loads at negedge cnt==19, dout ready for SCK 20.
++  // -------------------------------------------------------------------------
++
++  // Trigger DPI read at end of dummy cycles (posedge sck, cnt == 19)
++  reg [31:0] rdata_reg;
++  always @(posedge sck or posedge reset) begin
++    if (reset) rdata_reg <= 32'd0;
++    else if (cnt == 19 && cmd == 8'hEB) psram_read({8'd0, addr}, rdata_reg);
++  end
++
++  // Read shift register — updated on negedge sck.
++  // rdata_reg from DPI-C is little-endian: [7:0]=byte0, [15:8]=byte1...
++  // Byte-swap so byte0 goes to [31:28] and shifts out first.
++  reg [31:0] rd_shift;
++  always @(negedge sck or posedge reset) begin
++    if (reset) begin
++      rd_shift <= 32'd0;
++    end else if (cnt == 20 && cmd == 8'hEB) begin
++      rd_shift <= {rdata_reg[7:0], rdata_reg[15:8], rdata_reg[23:16], rdata_reg[31:24]};
++    end else if (cnt >= 21 && cmd == 8'hEB) begin
++      rd_shift <= {rd_shift[27:0], 4'b0};
++    end
++  end
++
++  // Tri-state control: drive bus during data phase (SCK 20..27)
++  reg douten;
++  always @(negedge sck or posedge reset) begin
++    if (reset) douten <= 1'b0;
++    else if (cnt >= 20 && cnt < 28 && cmd == 8'hEB) douten <= 1'b1;
++    else douten <= 1'b0;
++  end
++
++  wire [3:0] dout = rd_shift[31:28];
++
++  // -------------------------------------------------------------------------
++  // 38h — Quad IO Write (1-4-4)
++  //   cnt 0..7  : command  (1-bit)
++  //   cnt 8..13 : address  (4-bit / SCK)
++  //   cnt 14..N : data     (4-bit / SCK), N depends on write size
++  //
++  //   Controller sends bytes in order: byte0, byte1, byte2, byte3.
++  //   wd[7:0]=byte0, wd[15:8]=byte1... — already little-endian.
++  //   Write triggered on ce_n rising edge (posedge reset).
++  // -------------------------------------------------------------------------
++
++  // Write data shift register: shifts in 4-bit nibbles from LSB.
++  // Controller sends: cnt=14→line[7:4], cnt=15→line[3:0],
++  //   cnt=16→line[15:12], cnt=17→line[11:8], ...
++  // {wd[27:0], dio} shifts existing nibbles left, inserts new at [3:0].
++  // After 2N SCK: wd[(N*8-1):0] = {byteN-1, ..., byte0} (little-endian).
++  reg [31:0] wd;
++  always @(posedge sck or posedge reset) begin
++    if (reset)
++      wd <= 32'd0;
++    else if (cnt >= 14 && cmd == 8'h38)
++      wd <= {wd[27:0], dio};
++  end
++
++  // Trigger DPI write at end of transaction (ce_n rising).
++  // cnt at reset = last SCK index. nibbles = cnt - 13, bytes = nibbles / 2.
++  // wd is little-endian, passed as-is to DPI-C.
++  wire [7:0] wtype;
++  assign wtype = ((cnt - 8'd14) >> 1) ;
++  wire [3:0] wmask_type ;
++  assign wmask_type = (wtype == 1) ? (
++      (addr[1:0] == 2'b00) ? 4'b0001 :
++      (addr[1:0] == 2'b01) ? 4'b0010 :
++      (addr[1:0] == 2'b10) ? 4'b0100 :
++      4'b1000
++  ) : (
++      (wtype == 2) ? (
++          (addr[1] == 1'b0) ? 4'b0011 : 4'b1100
++      ) : (
++          (wtype == 4) ? 4'b1111 : 4'b0000
++      )
++  );
++  wire [31:0] wdata;
++  assign wdata = (wtype == 1) ? {4{wd[7:0]}} :
++                  (wtype == 2) ? {2{wd[7:0], wd[15:8]}} :
++                  (wtype == 4) ? {wd[7:0], wd[15:8], wd[23:16], wd[31:24]} :
++                  32'd0;
++
++  always @(posedge sck or posedge reset) begin
++    if (reset) begin
++      if (cmd == 8'h38 && cnt >= 15) begin
++        psram_write({8'd0, addr}, wdata, {28'd0,wmask_type});
++      end
++    end
++  end
++
++  // -------------------------------------------------------------------------
++  // Tri-state I/O
++  // -------------------------------------------------------------------------
++  assign dio[0] = douten ? dout[0] : 1'bz;
++  assign dio[1] = douten ? dout[1] : 1'bz;
++  assign dio[2] = douten ? dout[2] : 1'bz;
++  assign dio[3] = douten ? dout[3] : 1'bz;
+ 
+ endmodule
+diff --git a/perip/sdram/core_sdram_axi4/sdram_axi.v b/perip/sdram/core_sdram_axi4/sdram_axi.v
+index 64641f58..e743eb16 100644
+--- a/perip/sdram/core_sdram_axi4/sdram_axi.v
++++ b/perip/sdram/core_sdram_axi4/sdram_axi.v
+@@ -53,7 +53,7 @@ module sdram_axi
+     ,input  [  7:0]  inport_arlen_i
+     ,input  [  1:0]  inport_arburst_i
+     ,input           inport_rready_i
+-    ,input  [ 15:0]  sdram_data_input_i
++    ,input  [ 31:0]  sdram_data_input_i
+ 
+     // Outputs
+     ,output          inport_awready_o
+@@ -73,10 +73,10 @@ module sdram_axi
+     ,output          sdram_ras_o
+     ,output          sdram_cas_o
+     ,output          sdram_we_o
+-    ,output [  1:0]  sdram_dqm_o
++    ,output [  3:0]  sdram_dqm_o
+     ,output [ 12:0]  sdram_addr_o
+     ,output [  1:0]  sdram_ba_o
+-    ,output [ 15:0]  sdram_data_output_o
++    ,output [ 31:0]  sdram_data_output_o
+     ,output          sdram_data_out_en_o
+ );
+ 
+diff --git a/perip/sdram/core_sdram_axi4/sdram_axi_core.v b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
+index cedbf77b..e349f5e0 100644
+--- a/perip/sdram/core_sdram_axi4/sdram_axi_core.v
++++ b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
+@@ -42,7 +42,7 @@ module sdram_axi_core
+     ,input  [  7:0]  inport_len_i
+     ,input  [ 31:0]  inport_addr_i
+     ,input  [ 31:0]  inport_write_data_i
+-    ,input  [ 15:0]  sdram_data_input_i
++    ,input  [ 31:0]  sdram_data_input_i
+ 
+     // Outputs
+     ,output          inport_accept_o
+@@ -55,10 +55,10 @@ module sdram_axi_core
+     ,output          sdram_ras_o
+     ,output          sdram_cas_o
+     ,output          sdram_we_o
+-    ,output [  1:0]  sdram_dqm_o
++    ,output [  3:0]  sdram_dqm_o
+     ,output [ 12:0]  sdram_addr_o
+     ,output [  1:0]  sdram_ba_o
+-    ,output [ 15:0]  sdram_data_output_o
++    ,output [ 31:0]  sdram_data_output_o
+     ,output          sdram_data_out_en_o
+ );
+ 
+@@ -76,7 +76,7 @@ parameter SDRAM_READ_LATENCY     = 2;
+ // Defines / Local params
+ //-----------------------------------------------------------------
+ localparam SDRAM_BANK_W          = 2;
+-localparam SDRAM_DQM_W           = 2;
++localparam SDRAM_DQM_W           = 4;   // 2 chips × 2 bits
+ localparam SDRAM_BANKS           = 2 ** SDRAM_BANK_W;
+ localparam SDRAM_ROW_W           = SDRAM_ADDR_W - SDRAM_COL_W - SDRAM_BANK_W;
+ localparam SDRAM_REFRESH_CNT     = 2 ** SDRAM_ROW_W;
+@@ -93,8 +93,8 @@ localparam CMD_PRECHARGE     = 4'b0010;
+ localparam CMD_REFRESH       = 4'b0001;
+ localparam CMD_LOAD_MODE     = 4'b0000;
+ 
+-// Mode: Burst Length = 4 bytes, CAS=2
+-localparam MODE_REG          = {3'b000,1'b0,2'b00,3'b010,1'b0,3'b001};
++// Mode: Burst Length = 1 (32-bit SDRAM, single beat), CAS=2
++localparam MODE_REG          = {3'b000,1'b0,2'b00,3'b010,1'b0,3'b000};
+ 
+ // SM states
+ localparam STATE_W           = 4;
+@@ -112,7 +112,7 @@ localparam STATE_REFRESH     = 4'd9;
+ localparam AUTO_PRECHARGE    = 10;
+ localparam ALL_BANKS         = 10;
+ 
+-localparam SDRAM_DATA_W      = 16;
++localparam SDRAM_DATA_W      = 32;   // 2 × 16-bit chips
+ 
+ localparam CYCLE_TIME_NS     = 1000 / SDRAM_MHZ;
+ 
+@@ -159,9 +159,7 @@ reg [SDRAM_DQM_W-1:0]  dqm_q;
+ reg                    cke_q;
+ reg [SDRAM_BANK_W-1:0] bank_q;
+ 
+-// Buffer half word during read and write commands
+-reg [SDRAM_DATA_W-1:0] data_buffer_q;
+-reg [SDRAM_DQM_W-1:0]  dqm_buffer_q;
++// No burst buffers needed: BL=1, single 32-bit beat per READ/WRITE
+ 
+ wire [SDRAM_DATA_W-1:0] sdram_data_in_w;
+ 
+@@ -177,9 +175,9 @@ reg  [STATE_W-1:0]     target_state_q;
+ reg  [STATE_W-1:0]     delay_state_q;
+ 
+ // Address bits
+-wire [SDRAM_ROW_W-1:0]  addr_col_w  = {{(SDRAM_ROW_W-SDRAM_COL_W){1'b0}}, ram_addr_w[SDRAM_COL_W:2], 1'b0};
+-wire [SDRAM_ROW_W-1:0]  addr_row_w  = ram_addr_w[SDRAM_ADDR_W:SDRAM_COL_W+2+1];
+-wire [SDRAM_BANK_W-1:0] addr_bank_w = ram_addr_w[SDRAM_COL_W+2:SDRAM_COL_W+2-1];
++wire [SDRAM_ROW_W-1:0]  addr_col_w  = {{(SDRAM_ROW_W-SDRAM_COL_W){1'b0}},ram_addr_w[SDRAM_COL_W+1:2]};
++wire [SDRAM_ROW_W-1:0]  addr_row_w  = ram_addr_w[SDRAM_ADDR_W+1:SDRAM_COL_W+2+1+1];
++wire [SDRAM_BANK_W-1:0] addr_bank_w = ram_addr_w[SDRAM_COL_W+3:SDRAM_COL_W+2];
+ 
+ //-----------------------------------------------------------------
+ // SDRAM State Machine
+@@ -460,6 +458,7 @@ else if (state_q == STATE_REFRESH)
+ // Input sampling
+ //-----------------------------------------------------------------
+ 
++// Single 32-bit sample — no burst assembly needed (BL=1)reg [SDRAM_DATA_W-1:0] sample_data0_q;
+ reg [SDRAM_DATA_W-1:0] sample_data0_q;
+ always @ (posedge clk_i or posedge rst_i)
+ if (rst_i)
+@@ -483,13 +482,12 @@ always @ (posedge clk_i or posedge rst_i)
+ if (rst_i)
+ begin
+     command_q       <= CMD_NOP;
+-    data_q          <= 16'b0;
++    data_q          <= {SDRAM_DATA_W{1'b0}};
+     addr_q          <= {SDRAM_ROW_W{1'b0}};
+     bank_q          <= {SDRAM_BANK_W{1'b0}};
+     cke_q           <= 1'b0;
+     dqm_q           <= {SDRAM_DQM_W{1'b0}};
+     data_rd_en_q    <= 1'b1;
+-    dqm_buffer_q    <= {SDRAM_DQM_W{1'b0}};
+ 
+     for (idx=0;idx<SDRAM_BANKS;idx=idx+1)
+         active_row_q[idx] <= {SDRAM_ROW_W{1'b0}};
+@@ -616,14 +614,13 @@ begin
+         command_q       <= CMD_WRITE;
+         addr_q          <= addr_col_w;
+         bank_q          <= addr_bank_w;
+-        data_q          <= ram_write_data_w[15:0];
++        data_q          <= ram_write_data_w;         // 32-bit at once
+ 
+         // Disable auto precharge (auto close of row)
+         addr_q[AUTO_PRECHARGE]  <= 1'b0;
+ 
+-        // Write mask
+-        dqm_q           <= ~ram_wr_w[1:0];
+-        dqm_buffer_q    <= ~ram_wr_w[3:2];
++        // Write mask — all 4 bytes
++        dqm_q           <= ~ram_wr_w;
+ 
+         data_rd_en_q    <= 1'b0;
+     end
+@@ -632,16 +629,9 @@ begin
+     //-----------------------------------------
+     STATE_WRITE1 :
+     begin
+-        // Burst continuation
++        // BL=1: no burst continuation, just timing
+         command_q   <= CMD_NOP;
+-
+-        data_q      <= data_buffer_q;
+-
+-        // Disable auto precharge (auto close of row)
+         addr_q[AUTO_PRECHARGE]  <= 1'b0;
+-
+-        // Write mask
+-        dqm_q       <= dqm_buffer_q;
+     end
+     endcase
+ end
+@@ -658,21 +648,8 @@ else
+     rd_q    <= {rd_q[SDRAM_READ_LATENCY:0], (state_q == STATE_READ)};
+ 
+ //-----------------------------------------------------------------
+-// Data Buffer
+-//-----------------------------------------------------------------
+-
+-// Buffer upper 16-bits of write data so write command can be accepted
+-// in WRITE0. Also buffer lower 16-bits of read data.
+-always @ (posedge clk_i or posedge rst_i)
+-if (rst_i)
+-    data_buffer_q <= 16'b0;
+-else if (state_q == STATE_WRITE0)
+-    data_buffer_q <= ram_write_data_w[31:16];
+-else if (rd_q[SDRAM_READ_LATENCY+1])
+-    data_buffer_q <= sample_data_q;
+-
+-// Read data output
+-assign ram_read_data_w = {sample_data_q, data_buffer_q};
++// Read data output — 32-bit direct (BL=1, no burst assembly needed)
++assign ram_read_data_w = sample_data_q;
+ 
+ //-----------------------------------------------------------------
+ // ACK
+@@ -686,7 +663,7 @@ else
+ begin
+     if (state_q == STATE_WRITE1)
+         ack_q <= 1'b1;
+-    else if (rd_q[SDRAM_READ_LATENCY+1])
++    else if (rd_q[SDRAM_READ_LATENCY])   // BL=1: data ready 1 cycle earlier than BL=2
+         ack_q <= 1'b1;
+     else
+         ack_q <= 1'b0;
+diff --git a/perip/sdram/sdram.v b/perip/sdram/sdram.v
+index 3613b231..59d7cc62 100644
+--- a/perip/sdram/sdram.v
++++ b/perip/sdram/sdram.v
+@@ -1,16 +1,249 @@
+-module sdram(
+-  input        clk,
+-  input        cke,
+-  input        cs,
+-  input        ras,
+-  input        cas,
+-  input        we,
+-  input [12:0] a,
+-  input [ 1:0] ba,
+-  input [ 1:0] dqm,
+-  inout [15:0] dq
++//-----------------------------------------------------------------
++// MT48LC16M16A2 SDRAM Behavioral Simulation Model (DPI-C backed)
++//
++// Organization: 4 banks x 8192 rows x 512 cols x 16 bits = 256Mb
++//
++// Supported commands:
++//   ACTIVE, READ, WRITE, LOAD MODE REGISTER
++//   PRECHARGE → clears bank active flag
++//   AUTO REFRESH, BURST TERMINATE → NOP
++//
++// Mode Register fields used:
++//   A[6:4] = CAS Latency (010=CL2, 011=CL3)
++//   A[2:0] = Burst Length (001=2, 010=4, 011=8)
++//
++// Read pipeline: counter-based, adapts to CAS latency automatically
++//   CL=2: READ cmd(T0) → wait 1 cycle → data on DQ(T2)
++//   CL=3: READ cmd(T0) → wait 2 cycles → data on DQ(T3)
++//
++// Storage: DPI-C calls into C++ simulation environment
++//-----------------------------------------------------------------
++
++module sdram #(
++  parameter CHIP_ID = 0     // 0=lower 16 bits, 1=upper 16 bits of 32-bit DPI word
++) (
++  input         clk,       // SDRAM clock (= ~sys_clk from controller)
++  input         cke,       // Clock enable
++  input         cs,        // Chip select (active low)
++  input         ras,       // Row address strobe (active low)
++  input         cas,       // Column address strobe (active low)
++  input         we,        // Write enable (active low)
++  input  [12:0] a,         // Address (row / column multiplexed)
++  input  [ 1:0] ba,        // Bank address
++  input  [ 1:0] dqm,       // Data mask (active high per byte)
++  inout  [15:0] dq          // Data bus
+ );
+ 
+-  assign dq = 16'bz;
++  // DPI-C: memory storage in C++
++  import "DPI-C" function void sdram_dpi_read (input int addr, output int data);
++  import "DPI-C" function void sdram_dpi_write(input int addr, input int data, input int mask);
++
++  //-----------------------------------------------------------------
++  // Parameters
++  //-----------------------------------------------------------------
++  localparam ROW_W  = 13;   // 8192 rows
++  localparam COL_W  = 9;    // 512 columns
++  localparam BANK_W = 2;    // 4 banks
++
++  // SDRAM commands: {CS#, RAS#, CAS#, WE#} — all active low
++  localparam CMD_LMR  = 4'b0000;  // Load Mode Register
++  localparam CMD_AREF = 4'b0001;  // Auto Refresh → NOP
++  localparam CMD_PRE  = 4'b0010;  // Precharge
++  localparam CMD_ACT  = 4'b0011;  // Bank Activate
++  localparam CMD_WR   = 4'b0100;  // Write
++  localparam CMD_RD   = 4'b0101;  // Read
++  localparam CMD_BST  = 4'b0110;  // Burst Terminate → NOP
++  localparam CMD_NOP  = 4'b0111;  // No Operation
++
++  wire [3:0] cmd;
++  assign cmd = {cs, ras, cas, we};
++
++  //-----------------------------------------------------------------
++  // Mode Register — loaded by CMD_LMR
++  //-----------------------------------------------------------------
++  reg [2:0] mode_cl;     // CAS latency: 010=CL2, 011=CL3
++  reg [2:0] mode_bl;     // Burst length: 001=2, 010=4, 011=8
++
++  // Burst length → number of 16-bit beats
++  wire [3:0] bl_beats;
++  assign bl_beats = (mode_bl == 3'b000) ? 4'd1 :
++                    (mode_bl == 3'b001) ? 4'd2 :
++                    (mode_bl == 3'b010) ? 4'd4 :
++                    (mode_bl == 3'b011) ? 4'd8 : 4'd1;
++  //-----------------------------------------------------------------
++  // Bank state — one open row per bank
++  //-----------------------------------------------------------------
++  reg                ba_act [0:3];   // bank[i] is active?
++  reg [ROW_W-1:0]    ba_row [0:3];   // active row in bank[i]
++
++  //-----------------------------------------------------------------
++  // Read state — counter-based pipeline
++  //   rd_active=1, rd_delay=N → wait N cycles → output data
++  //-----------------------------------------------------------------
++  reg                rd_active;      // read burst in progress
++  reg [3:0]          rd_delay;       // remaining wait cycles before data
++  reg [COL_W-1:0]    rd_col;         // current column address
++  reg [BANK_W-1:0]   rd_ba;          // target bank
++  reg [3:0]          rd_rem;         // remaining burst beats
++
++  //-----------------------------------------------------------------
++  // Write burst state — continuation after CMD_WR
++  //-----------------------------------------------------------------
++  reg                wr_active;      // write burst in progress
++  reg [COL_W-1:0]    wr_col;         // next column address
++  reg [BANK_W-1:0]   wr_ba;          // target bank
++  reg [3:0]          wr_rem;         // remaining burst beats
++
++  //-----------------------------------------------------------------
++  // DQ tristate output
++  //-----------------------------------------------------------------
++  wire [15:0] dq_out;
++  wire        dq_oe;
++  assign dq = dq_oe ? dq_out : 16'bz;
++  reg [31:0] rdata;
++ 
++  always @(*) begin
++    if (rd_active && rd_delay == 4'd0) begin
++      if(CHIP_ID == 0)
++        sdram_dpi_read({7'd0, faddr(rd_ba, ba_row[rd_ba], rd_col),1'b0}, rdata);
++      else
++         sdram_dpi_read({7'd0, faddr(rd_ba, ba_row[rd_ba], rd_col),1'b1}, rdata);
++    end
++    else
++      rdata = 32'h0;
++  end
++
++  // CHIP_ID=0 → lower 16 bits; CHIP_ID=1 → upper 16 bits of the 32-bit DPI word
++  assign dq_out = rdata[15:0];
++  assign dq_oe = rd_active && rd_delay == 4'd0;
++  //-----------------------------------------------------------------
++  // Flat address builder: {bank[1:0], row[12:0], col[8:0]} = 24 bits
++  //-----------------------------------------------------------------
++  function [23:0] faddr;
++    input [BANK_W-1:0] b;
++    input [ROW_W-1:0]  r;
++    input [COL_W-1:0]  c;
++    begin
++      faddr = {r,b, c};
++    end
++  endfunction
++
++  //-----------------------------------------------------------------
++  // DPI argument registers (32-bit to match DPI-C int type)
++  //-----------------------------------------------------------------
++  wire [31:0] host_addr;
++  wire [31:0] host_wdata;
++  wire [31:0] host_rdata;
++  wire[31:0] host_mask;
++
++  //-----------------------------------------------------------------
++  // Main logic
++  //-----------------------------------------------------------------
++  always @(posedge clk) begin
++    
++    if(rd_active) begin
++      if (rd_delay > 4'd0) begin
++        rd_delay <= rd_delay - 4'd1;
++      end else begin
++        rd_rem <= rd_rem - 4'd1;
++        rd_col <= rd_col + 1'b1;
++        if (rd_rem == 4'd1) rd_active <= 1'b0;
++      end
++    end
++
++    //===============================================================
++    // Command execution (CKE=1, CS#=0)
++    //===============================================================
++    if (cke && !cs) begin
++      case (cmd)
++
++        CMD_NOP, CMD_BST: ;   // nothing to do
++
++        //----- Load Mode Register -----
++        CMD_LMR: begin
++          mode_cl <= a[6:4];
++          mode_bl <= a[2:0];
++        end
++
++        //----- Auto Refresh (NOP) -----
++        CMD_AREF: ;
++
++        //----- Precharge: close row(s) -----
++        CMD_PRE: begin
++          if (a[10]) begin
++            ba_act[0] <= 1'b0; ba_act[1] <= 1'b0;
++            ba_act[2] <= 1'b0; ba_act[3] <= 1'b0;
++          end else begin
++            ba_act[ba] <= 1'b0;
++          end
++        end
++
++        //----- Bank Activate: open a row -----
++        CMD_ACT: begin
++          ba_row[ba] <= a[ROW_W-1:0];
++          ba_act[ba] <= 1'b1;
++        end
++
++        //----- Read: start pipeline -----
++        CMD_RD: begin
++          if (ba_act[ba]) begin
++            rd_active <= 1'b1;
++            rd_delay  <= {1'b0, mode_cl} - 4'd1;    // CL-1 dead cycles
++            rd_col    <= a[COL_W-1:0];
++            rd_ba     <= ba;
++            rd_rem    <= bl_beats;
++          end
++        end
++
++        //----- Write: first beat on DQ now -----
++        CMD_WR: begin
++          if (ba_act[ba]) begin
++            if (CHIP_ID == 0)
++              sdram_dpi_write({7'd0, faddr(ba, ba_row[ba], a[COL_W-1:0]),1'b0},
++                              {16'd0, dq}, {30'd0, dqm});
++            else
++              sdram_dpi_write({7'd0, faddr(ba, ba_row[ba], a[COL_W-1:0]),1'b1},
++                              {16'd0, dq}, {30'd0, dqm});
++            // remaining beats via burst continuation
++            if (bl_beats > 1) begin
++              wr_active <= 1'b1;
++              wr_col    <= a[COL_W-1:0] + 1'b1;
++              wr_ba     <= ba;
++              wr_rem    <= bl_beats - 4'd1;
++            end
++          end
++        end
++
++        default: ;
++      endcase
++    end
++
++    //===============================================================
++    // Write burst continuation (subsequent beats on NOP cycles)
++    //===============================================================
++    if (cke && wr_active) begin
++            if (CHIP_ID == 0)
++              sdram_dpi_write({7'd0, faddr(wr_ba, ba_row[wr_ba], wr_col),1'b0},
++                              {16'd0, dq}, {30'd0, dqm});
++            else
++              sdram_dpi_write({7'd0, faddr(wr_ba, ba_row[wr_ba], wr_col),1'b1},
++                              {16'd0, dq}, {30'd0, dqm});
++      wr_col <= wr_col + 1'b1;
++      wr_rem <= wr_rem - 4'd1;
++      if (wr_rem == 4'd1) wr_active <= 1'b0;
++    end
++  end
++
++  //-----------------------------------------------------------------
++  // Initialization
++  //-----------------------------------------------------------------
++  integer gi;
++  initial begin
++    mode_cl   = 3'b010;    // default CL=2 (matches controller)
++    mode_bl   = 3'b000;    // default BL=2 (matches controller)
++    for (gi = 0; gi < 4; gi = gi + 1) ba_act[gi] = 1'b0;
++    rd_active = 1'b0;
++    wr_active = 1'b0;
++  end
+ 
+ endmodule
+diff --git a/perip/sdram/sdram_32.v b/perip/sdram/sdram_32.v
+new file mode 100644
+index 00000000..9e05fda1
+--- /dev/null
++++ b/perip/sdram/sdram_32.v
+@@ -0,0 +1,50 @@
++//-----------------------------------------------------------------
++// sdram_32 — 32-bit SDRAM wrapper using 2 × 16-bit MT48LC16M16A2
++//
++// Two 16-bit chips in parallel for bit-extension:
++//   chip0: dq[15:0],  dqm[1:0]
++//   chip1: dq[31:16], dqm[3:2]
++//
++// All command/address/control signals are shared between the two chips.
++//-----------------------------------------------------------------
++
++module sdram_32(
++  input         clk,
++  input         cke,
++  input         cs,
++  input         ras,
++  input         cas,
++  input         we,
++  input  [12:0] a,
++  input  [ 1:0] ba,
++  input  [ 3:0] dqm,
++  inout  [31:0] dq
++);
++
++  sdram #(.CHIP_ID(0)) chip0 (
++    .clk (clk),
++    .cke (cke),
++    .cs  (cs),
++    .ras (ras),
++    .cas (cas),
++    .we  (we),
++    .a   (a),
++    .ba  (ba),
++    .dqm (dqm[1:0]),
++    .dq  (dq[15:0])
++  );
++
++  sdram #(.CHIP_ID(1)) chip1 (
++    .clk (clk),
++    .cke (cke),
++    .cs  (cs),
++    .ras (ras),
++    .cas (cas),
++    .we  (we),
++    .a   (a),
++    .ba  (ba),
++    .dqm (dqm[3:2]),
++    .dq  (dq[31:16])
++  );
++
++endmodule
+diff --git a/perip/sdram/sdram_top_apb.v b/perip/sdram/sdram_top_apb.v
+index 3bc5b93b..c89ccf8e 100644
+--- a/perip/sdram/sdram_top_apb.v
++++ b/perip/sdram/sdram_top_apb.v
+@@ -20,13 +20,13 @@ module sdram_top_apb (
+   output        sdram_we,
+   output [12:0] sdram_a,
+   output [ 1:0] sdram_ba,
+-  output [ 1:0] sdram_dqm,
+-  inout  [15:0] sdram_dq
++  output [ 3:0] sdram_dqm,   // 2 chips × 2 bits
++  inout  [31:0] sdram_dq     // 2 chips × 16 bits
+ );
+ 
+   wire sdram_dout_en;
+-  wire [15:0] sdram_dout;
+-  assign sdram_dq = sdram_dout_en ? sdram_dout : 16'bz;
++  wire [31:0] sdram_dout;
++  assign sdram_dq = sdram_dout_en ? sdram_dout : 32'bz;
+ 
+   typedef enum [1:0] { ST_IDLE, ST_WAIT_ACCEPT, ST_WAIT_ACK } state_t;
+   reg [1:0] state;
+diff --git a/perip/sdram/sdram_top_axi.v b/perip/sdram/sdram_top_axi.v
+index f0fd6fdb..56704c50 100644
+--- a/perip/sdram/sdram_top_axi.v
++++ b/perip/sdram/sdram_top_axi.v
+@@ -39,13 +39,13 @@ module sdram_top_axi(
+   output        sdram_we,
+   output [12:0] sdram_a,
+   output [ 1:0] sdram_ba,
+-  output [ 1:0] sdram_dqm,
+-  inout  [15:0] sdram_dq
++  output [ 3:0] sdram_dqm,   // 2 chips × 2 bits
++  inout  [31:0] sdram_dq     // 2 chips × 16 bits
+ );
+ 
+   wire sdram_dout_en;
+-  wire [15:0] sdram_dout;
+-  assign sdram_dq = sdram_dout_en ? sdram_dout : 16'bz;
++  wire [31:0] sdram_dout;
++  assign sdram_dq = sdram_dout_en ? sdram_dout : 32'bz;
+   sdram_axi #(
+     .SDRAM_MHZ(100),
+     .SDRAM_ADDR_W(24),
+diff --git a/perip/spi/rtl/spi_top_apb.v b/perip/spi/rtl/spi_top_apb.v
+index 92d37516..6f5c4f62 100644
+--- a/perip/spi/rtl/spi_top_apb.v
++++ b/perip/spi/rtl/spi_top_apb.v
+@@ -48,26 +48,219 @@ assign in_prdata  = data[31:0];
+ 
+ `else
+ 
++// ================================================================
++// SPI Controller instantiation
++// ================================================================
++wire        wb_ack;
++wire [31:0] wb_dat_o;
++
++// Wishbone signals — muxed between APB (normal) and XIP FSM
++wire [4:0]  wb_adr;
++wire [31:0] wb_dat_i;
++wire [3:0]  wb_sel;
++wire        wb_we;
++wire        wb_stb;
++wire        wb_cyc;
++
+ spi_top u0_spi_top (
+-  .wb_clk_i(clock),
+-  .wb_rst_i(reset),
+-  .wb_adr_i(in_paddr[4:0]),
+-  .wb_dat_i(in_pwdata),
+-  .wb_dat_o(in_prdata),
+-  .wb_sel_i(in_pstrb),
+-  .wb_we_i (in_pwrite),
+-  .wb_stb_i(in_psel),
+-  .wb_cyc_i(in_penable),
+-  .wb_ack_o(in_pready),
+-  .wb_err_o(in_pslverr),
+-  .wb_int_o(spi_irq_out),
+-
+-  .ss_pad_o(spi_ss),
++  .wb_clk_i  (clock),
++  .wb_rst_i  (reset),
++  .wb_adr_i  (wb_adr),
++  .wb_dat_i  (wb_dat_i),
++  .wb_dat_o  (wb_dat_o),
++  .wb_sel_i  (wb_sel),
++  .wb_we_i   (wb_we),
++  .wb_stb_i  (wb_stb),
++  .wb_cyc_i  (wb_cyc),
++  .wb_ack_o  (wb_ack),
++  .wb_err_o  (in_pslverr),
++  .wb_int_o  (spi_irq_out),
++
++  .ss_pad_o  (spi_ss),
+   .sclk_pad_o(spi_sck),
+   .mosi_pad_o(spi_mosi),
+   .miso_pad_i(spi_miso)
+ );
+ 
++// ================================================================
++// Address decode
++// ================================================================
++wire is_flash = (in_paddr >= flash_addr_start) && (in_paddr <= flash_addr_end);
++wire [31:0] flash_offset = in_paddr - flash_addr_start;
++
++// ================================================================
++// XIP State Machine
++// ================================================================
++// When the CPU reads from flash address space, this FSM:
++//   1. Writes SPI registers (DIV, SS, TX_1, CTRL) via Wishbone
++//   2. Polls CTRL until GO clears
++//   3. Reads RX_0, byte-swaps, and returns data via APB
++//
++// The APB is stalled (pready = 0) during the entire XIP sequence.
++// Writes to flash space are reported as errors.
++
++localparam XIP_IDLE    = 3'd0;
++localparam XIP_WR_DIV  = 3'd1;
++localparam XIP_WR_SS0  = 3'd2;  // SS=0: deselect flash to reset it to cmd_t
++localparam XIP_WR_SS   = 3'd3;  // SS=1: select flash on SS0
++localparam XIP_WR_TX1  = 3'd4;
++localparam XIP_WR_CTRL = 3'd5;
++localparam XIP_WAIT    = 3'd6;
++localparam XIP_READ    = 3'd7;
++
++reg  [2:0]  xip_state;
++reg  [31:0] xip_rdata;       // final byte-swapped read data
++reg         xip_done;        // 1-cycle pulse: APB response ready
++
++// XIP Wishbone master signals
++reg  [4:0]  xip_wb_adr;
++reg  [31:0] xip_wb_dat_i;
++reg         xip_wb_we;
++reg         xip_wb_stb;
++reg         xip_wb_cyc;
++
++always @(posedge clock or posedge reset) begin
++  if (reset) begin
++    xip_state    <= XIP_IDLE;
++    xip_rdata    <= 32'd0;
++    xip_done     <= 1'b0;
++    xip_wb_adr   <= 5'd0;
++    xip_wb_dat_i <= 32'd0;
++    xip_wb_we    <= 1'b0;
++    xip_wb_stb   <= 1'b0;
++    xip_wb_cyc   <= 1'b0;
++  end else begin
++    // Default: deassert done pulse (lasts only 1 cycle)
++    xip_done <= 1'b0;
++
++    case (xip_state)
++      // -----------------------------------------------------------
++      // In IDLE we deassert Wishbone.  As soon as a flash read is
++      // detected, we immediately issue the first WB write (DIV)
++      // and keep stb/cyc asserted across all register writes.
++      // Each subsequent state switches adr/dat/we on the same cycle
++      // that the previous transaction's ack fires, saving one dead
++      // cycle per transaction.
++      XIP_IDLE: begin
++        xip_wb_stb <= 1'b0;
++        xip_wb_cyc <= 1'b0;
++        if (in_psel && in_penable && !in_pwrite && is_flash && !xip_done) begin
++          xip_wb_adr   <= 5'd20;        // SPI_DIV
++          xip_wb_dat_i <= 32'd1;
++          xip_wb_we    <= 1'b1;
++          xip_wb_stb   <= 1'b1;
++          xip_wb_cyc   <= 1'b1;
++          xip_state    <= XIP_WR_DIV;
++        end
++      end
++
++      XIP_WR_DIV: begin
++        if (wb_ack) begin
++          xip_wb_adr   <= 5'd24;        // SS=0 to reset flash
++          xip_wb_dat_i <= 32'd0;
++          xip_state    <= XIP_WR_SS0;
++        end
++      end
++
++      XIP_WR_SS0: begin
++        if (wb_ack) begin
++          xip_wb_adr   <= 5'd24;        // SS=1 to select flash
++          xip_wb_dat_i <= 32'd1;
++          xip_state    <= XIP_WR_SS;
++        end
++      end
++
++      XIP_WR_SS: begin
++        if (wb_ack) begin
++          xip_wb_adr   <= 5'd4;         // TX_1
++          xip_wb_dat_i <= {8'h03, flash_offset[23:0]};
++          xip_state    <= XIP_WR_TX1;
++        end
++      end
++
++      XIP_WR_TX1: begin
++        if (wb_ack) begin
++          xip_wb_adr   <= 5'd16;        // CTRL
++          // ASS=0 IE=1 LSB=0 TXNEG=1 RXNEG=0 GO=1 res=0 CHAR_LEN=64
++          xip_wb_dat_i <= {18'd0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 7'd64};
++          xip_state    <= XIP_WR_CTRL;
++        end
++      end
++
++      XIP_WR_CTRL: begin
++        if (wb_ack) begin
++          // Release Wishbone, wait for SPI interrupt (transfer complete)
++          xip_wb_stb   <= 1'b0;
++          xip_wb_cyc   <= 1'b0;
++          xip_state    <= XIP_WAIT;
++        end
++      end
++
++      // Wait for SPI interrupt (fires when GO bit auto-clears after transfer)
++      XIP_WAIT: begin
++        if (spi_irq_out) begin
++          xip_wb_adr   <= 5'd0;       // RX_0
++          xip_wb_we    <= 1'b0;
++          xip_wb_stb   <= 1'b1;
++          xip_wb_cyc   <= 1'b1;
++          xip_state    <= XIP_READ;
++        end
++      end
++
++      XIP_READ: begin
++        if (wb_ack) begin
++          xip_wb_stb   <= 1'b0;
++          xip_wb_cyc   <= 1'b0;
++          xip_rdata    <= {wb_dat_o[7:0], wb_dat_o[15:8],
++                           wb_dat_o[23:16], wb_dat_o[31:24]};
++          xip_done     <= 1'b1;
++          xip_state    <= XIP_IDLE;
++        end
++      end
++
++      default: xip_state <= XIP_IDLE;
++    endcase
++  end
++end
++
++// ================================================================
++// Wishbone bus mux: APB (normal access) vs XIP state machine
++// ================================================================
++// Block APB→Wishbone passthrough as soon as a flash read is detected,
++// so the APB request doesn't leak through as a spurious SPI read before
++// the XIP state machine enters WR_DIV.
++wire xip_trigger = (xip_state == XIP_IDLE) && in_psel && in_penable && !in_pwrite && is_flash;
++wire in_xip = (xip_state != XIP_IDLE) || xip_trigger;
++
++assign wb_adr   = in_xip ? xip_wb_adr   : in_paddr[4:0];
++assign wb_dat_i = in_xip ? xip_wb_dat_i : in_pwdata;
++assign wb_sel   = in_xip ? 4'hF         : in_pstrb;
++assign wb_we    = in_xip ? xip_wb_we    : in_pwrite;
++assign wb_stb   = in_xip ? xip_wb_stb   : in_psel;
++assign wb_cyc   = in_xip ? xip_wb_cyc   : in_penable;
++
++// ================================================================
++// APB response
++// ================================================================
++// Normal SPI access: pready follows wb_ack
++// XIP access:       pready is a 1-cycle pulse when XIP_READ completes
++// Flash write:      pready=1, pslverr=1 (error response)
++wire flash_write = is_flash && in_pwrite && in_psel && in_penable && !in_xip;
++
++assign in_pready  = flash_write ? 1'b1 :
++                    in_xip     ? xip_done :
++                                 wb_ack;
++assign in_prdata  = in_xip ? xip_rdata : wb_dat_o;
++
++// Report error on flash writes
++always @(posedge clock) begin
++  if (flash_write) begin
++    $fwrite(32'h80000002,
++            "[XIP ERROR] Write to flash address space detected! paddr=0x%08x, pwdata=0x%08x\n",
++            in_paddr, in_pwdata);
++  end
++end
++
+ `endif // FAST_FLASH
+ 
+ endmodule
+diff --git a/perip/vga/vga_top_apb.v b/perip/vga/vga_top_apb.v
+index 5c74cfbe..8b75a06a 100644
+--- a/perip/vga/vga_top_apb.v
++++ b/perip/vga/vga_top_apb.v
+@@ -1,3 +1,18 @@
++//-----------------------------------------------------------------
++// VGA Controller — 640×480 @ 60Hz, 24-bit color (RGB 8:8:8)
++// Frame buffer: DPI-C (C++ side manages 640×480×32-bit storage)
++// Pixel clock: sys_clk / 4 ≈ 25MHz
++//
++// VGA timing (800×525 @ 25MHz):
++//   h_total=800  h_sync=96  h_back=48  h_active=640  h_front=16
++//   v_total=525  v_sync=2   v_back=33  v_active=480  v_front=10
++//
++// DPI-C functions (implemented in C++):
++//   void vga_fb_write(int addr, int data) — APB write by linear index
++//   int  vga_fb_read (int addr)          — APB read by linear index
++//   int  vga_fb_pixel(int x, int y)      — VGA display read by coordinates
++//-----------------------------------------------------------------
++
+ module vga_top_apb(
+   input         clock,
+   input         reset,
+@@ -20,4 +35,95 @@ module vga_top_apb(
+   output        vga_valid
+ );
+ 
++  import "DPI-C" function void vga_fb_write(input int addr, input int data);
++  import "DPI-C" function int  vga_fb_read (input int addr);
++  import "DPI-C" function int  vga_fb_pixel(input int x, input int y);
++
++  localparam H_ACTIVE  = 640;
++  localparam V_ACTIVE  = 480;
++  localparam FB_SIZE   = 307200;
++
++  assign in_pready  = 1'b1;
++  assign in_pslverr = 1'b0;
++
++  //-----------------------------------------------------------------
++  // APB → DPI-C frame buffer write / read
++  //-----------------------------------------------------------------
++  wire        apb_wr = in_psel && in_penable && in_pwrite;
++  wire        apb_rd = in_psel && in_penable && !in_pwrite;
++  wire [18:0] pix_idx = in_paddr[20:2];
++
++  always @(posedge clock) begin
++    if (apb_wr && pix_idx < FB_SIZE)
++      vga_fb_write({13'b0,pix_idx}, in_pwdata);
++  end
++
++  assign in_prdata = (apb_rd && pix_idx < FB_SIZE) ? vga_fb_read({13'b0,pix_idx}) : 32'd0;
++
++  //-----------------------------------------------------------------
++  // VGA timing (25MHz pixel clock = sys_clock / 4)
++  //-----------------------------------------------------------------
++  localparam H_TOTAL  = 800;
++  localparam H_SYNC   = 96;
++  localparam H_BACK   = 48;
++  localparam H_BLANK  = H_SYNC + H_BACK;
++
++  localparam V_TOTAL  = 525;
++  localparam V_SYNC   = 2;
++  localparam V_BACK   = 33;
++  localparam V_BLANK  = V_SYNC + V_BACK;
++
++  reg [9:0] h_cnt;
++  reg [9:0] v_cnt;
++
++  always @(posedge clock) begin
++    if (reset) begin
++      h_cnt <= 10'd0;
++      v_cnt <= 10'd0;
++    end else begin
++      if (h_cnt == H_TOTAL - 1) begin
++        h_cnt <= 10'd0;
++        if (v_cnt == V_TOTAL - 1)
++          v_cnt <= 10'd0;
++        else
++          v_cnt <= v_cnt + 10'd1;
++      end else begin
++        h_cnt <= h_cnt + 10'd1;
++      end
++    end
++  end
++
++  wire h_active = (h_cnt >= H_BLANK) && (h_cnt < H_BLANK + H_ACTIVE);
++  wire v_active = (v_cnt >= V_BLANK) && (v_cnt < V_BLANK + V_ACTIVE);
++
++  assign vga_hsync = (h_cnt >= H_SYNC);
++  assign vga_vsync = (v_cnt >= V_SYNC);
++
++  wire [9:0] x = h_cnt - H_BLANK;
++  wire [9:0] y = v_cnt - V_BLANK;
++
++  wire [31:0] fb_word = vga_fb_pixel({22'b0,x}, {22'b0,y});
++
++  reg [7:0] r_out, g_out, b_out;
++  reg       valid_out;
++
++  always @(posedge clock) begin
++    if (h_active && v_active) begin
++      r_out     <= fb_word[23:16];
++      g_out     <= fb_word[15:8];
++      b_out     <= fb_word[7:0];
++      valid_out <= 1'b1;
++    end else begin
++      r_out     <= 8'd0;
++      g_out     <= 8'd0;
++      b_out     <= 8'd0;
++      valid_out <= 1'b0;
++    end
++  end
++
++  assign vga_r     = r_out;
++  assign vga_g     = g_out;
++  assign vga_b     = b_out;
++  assign vga_valid = valid_out;
++
+ endmodule
+diff --git a/src/CPU.scala b/src/CPU.scala
+index 7559195f..2037c556 100644
+--- a/src/CPU.scala
++++ b/src/CPU.scala
+@@ -13,7 +13,7 @@ object CPUAXI4BundleParameters {
+   def apply() = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = ChipLinkParam.idBits)
+ }
+ 
+-class ysyx_00000000 extends BlackBox {
++class ysyx_26060177 extends BlackBox {
+   val io = IO(new Bundle {
+     val clock = Input(Clock())
+     val reset = Input(Reset())
+@@ -35,7 +35,7 @@ class CPU(idBits: Int)(implicit p: Parameters) extends LazyModule {
+     val interrupt = IO(Input(Bool()))
+     val slave = IO(Flipped(AXI4Bundle(CPUAXI4BundleParameters())))
+ 
+-    val cpu = Module(new ysyx_00000000)
++    val cpu = Module(new ysyx_26060177)
+     cpu.io.clock := clock
+     cpu.io.reset := reset
+     cpu.io.io_interrupt := interrupt
+diff --git a/src/SoC.scala b/src/SoC.scala
+index 1c65cd87..c4d987ae 100644
+--- a/src/SoC.scala
++++ b/src/SoC.scala
+@@ -47,8 +47,10 @@ class ysyxSoCASIC(implicit p: Parameters) extends LazyModule {
+   val lsdram_apb = if (!Config.sdramUseAXI) Some(LazyModule(new APBSDRAM (sdramAddressSet))) else None
+   val lsdram_axi = if ( Config.sdramUseAXI) Some(LazyModule(new AXI4SDRAM(sdramAddressSet))) else None
+ 
++  val lclint = LazyModule(new AXI4CLINT(Seq(AddressSet(0x02000000, 0x0000ffff))))
++
+   List(lspi.node, luart.node, lpsram.node, lgpio.node, lkeyboard.node, lvga.node).map(_ := apbxbar)
+-  List(apbxbar := APBDelayer() := AXI4ToAPB() := AXI4Buffer(), lmrom.node, sramNode).map(_ := xbar2)
++  List(apbxbar := APBDelayer() := AXI4ToAPB() := AXI4Buffer(), lmrom.node, sramNode, lclint.node).map(_ := xbar2)
+   xbar2 := AXI4UserYanker(Some(1)) := AXI4Fragmenter() := xbar
+   if (Config.sdramUseAXI) lsdram_axi.get.node := ysyx.AXI4Delayer() := xbar
+   else                    lsdram_apb.get.node := apbxbar
+@@ -77,7 +79,7 @@ class ysyxSoCASIC(implicit p: Parameters) extends LazyModule {
+ 
+     // connect interrupt signal to cpu
+     val intr_from_chipSlave = IO(Input(Bool()))
+-    cpu.module.interrupt := intr_from_chipSlave
++    cpu.module.interrupt := intr_from_chipSlave || lclint.module.mtip
+ 
+     val sdramBundle = if (Config.sdramUseAXI) lsdram_axi.get.module.sdram_bundle
+                       else                    lsdram_apb.get.module.sdram_bundle
+@@ -135,14 +137,14 @@ class ysyxSoCFull(implicit p: Parameters) extends LazyModule {
+     val flash = Module(new flash)
+     flash.io <> masic.spi
+     flash.io.ss := masic.spi.ss(0)
+-    val bitrev = Module(new bitrev)
++    val bitrev = Module(new bitrevChisel)
+     bitrev.io <> masic.spi
+     bitrev.io.ss := masic.spi.ss(7)
+     masic.spi.miso := List(bitrev.io, flash.io).map(_.miso).reduce(_&&_)
+ 
+     val psram = Module(new psram)
+     psram.io <> masic.psram
+-    val sdram = Module(new sdram)
++    val sdram = Module(new sdram_32)   // 2 × 16-bit chips = 32-bit SDRAM
+     sdram.io <> masic.sdram
+ 
+     val externalPins = IO(new Bundle{
+diff --git a/src/Top.scala b/src/Top.scala
+index c00378a6..2913155b 100644
+--- a/src/Top.scala
++++ b/src/Top.scala
+@@ -7,7 +7,7 @@ import freechips.rocketchip.diplomacy.LazyModule
+ 
+ object Config {
+   def hasChipLink: Boolean = false
+-  def sdramUseAXI: Boolean = false
++  def sdramUseAXI: Boolean = true
+ }
+ 
+ class ysyxSoCTop extends Module {
+diff --git a/src/device/BitRev.scala b/src/device/BitRev.scala
+index 6bd3d572..29ccf5f8 100644
+--- a/src/device/BitRev.scala
++++ b/src/device/BitRev.scala
+@@ -7,7 +7,46 @@ class bitrev extends BlackBox {
+   val io = IO(Flipped(new SPIIO(1)))
+ }
+ 
+-class bitrevChisel extends RawModule { // we do not need clock and reset
++class bitrevChisel extends RawModule {
+   val io = IO(Flipped(new SPIIO(1)))
+-  io.miso := true.B
++
++  // === SPI Slave: all registers on SCK posedge ===
++  //
++  // The SPI master's pos_edge/neg_edge pulses fire ONE system-clock cycle
++  // BEFORE the actual SCK edge.  With TX_NEGEDGE=1 (MOSI changes at neg_edge):
++  //   - Initial MOSI is set before any SCK edge and is stable at the first
++  //     SCK posedge (the first neg_edge hasn't fired yet)
++  //   - Each subsequent MOSI bit is set at neg_edge (one cycle before SCK
++  //     falls) and is stable by the next SCK posedge
++  //
++  // Using SCK posedge for everything:
++  //   - Captures MOSI correctly (stable at each posedge)
++  //   - MISO updates at SCK posedge, master samples at next pos_edge
++  //     (3 sys-clock cycles later) — perfectly stable
++
++  withClockAndReset(io.sck.asClock, io.ss(0).asAsyncReset) {
++    val shift_reg = RegInit(0.U(8.W))   // input shift register (MSB first)
++    val out_reg   = RegInit(0.U(8.W))   // output register
++    val bit_cnt   = RegInit(0.U(4.W))   // bit counter
++
++    // Shift in MOSI from the right (first bit → shift_reg[7] after 8 captures)
++    shift_reg := Cat(shift_reg(6, 0), io.mosi)
++
++    // At bit_cnt=7 (8th posedge): old shift_reg has 7 bits, io.mosi
++    // carries the 8th bit — together they form the complete input byte.
++    // Load the bit-reversed result into out_reg.
++    when (bit_cnt === 7.U) {
++      out_reg := Reverse(Cat(shift_reg(6, 0), io.mosi))
++    }
++    // After loading, shift out_reg left each cycle to present successive
++    // bits MSB-first on MISO.
++    when (bit_cnt >= 8.U) {
++      out_reg := Cat(out_reg(6, 0), 0.U(1.W))
++    }
++
++    bit_cnt := bit_cnt + 1.U
++
++    // MISO: idle=1 during input (bit_cnt < 8), output reversed data MSB first
++    io.miso := Mux(bit_cnt < 8.U, true.B, out_reg(7))
++  }
+ }
+diff --git a/src/device/CLINT.scala b/src/device/CLINT.scala
+new file mode 100644
+index 00000000..cccaa97c
+--- /dev/null
++++ b/src/device/CLINT.scala
+@@ -0,0 +1,62 @@
++package ysyx
++
++import chisel3._
++import chisel3.util._
++
++import freechips.rocketchip.amba.axi4._
++import org.chipsalliance.cde.config.Parameters
++import freechips.rocketchip.diplomacy._
++import freechips.rocketchip.util._
++
++class AXI4CLINT(address: Seq[AddressSet])(implicit p: Parameters) extends LazyModule {
++  val node = AXI4SlaveNode(Seq(AXI4SlavePortParameters(
++    slaves = Seq(AXI4SlaveParameters(
++      address       = address,
++      executable    = false,
++      supportsRead  = TransferSizes(1, 4),
++      supportsWrite = TransferSizes.none
++    )),
++    beatBytes = 4
++  )))
++  lazy val module = new Impl
++  class Impl extends LazyModuleImp(this) {
++    val (in, _) = node.in(0)
++    
++    val mtime = RegInit(0.U(64.W))
++    val mtimecmp = RegInit(0.U(64.W))
++    
++    mtime := mtime + 1.U
++    
++    val mtip = IO(Output(Bool()))
++    mtip := mtime >= mtimecmp
++    
++    // AXI4 Read
++    val ar_ready = RegInit(true.B)
++    val r_valid = RegInit(false.B)
++    val r_data = RegInit(0.U(64.W))
++    val r_id = RegInit(0.U(in.ar.bits.id.getWidth.W))
++    
++    in.ar.ready := ar_ready
++    when(in.ar.fire) {
++      ar_ready := false.B
++      r_valid := true.B
++      r_id := in.ar.bits.id
++      val addr = in.ar.bits.addr(15, 0)
++      r_data := MuxLookup(addr, 0.U)(Seq(
++        0x0000.U -> 0.U,       // msip (not implemented)
++        0x4000.U -> mtimecmp,
++        0xbff8.U -> mtime
++      ))
++    }
++    when(in.r.fire) {
++      ar_ready := true.B
++      r_valid := false.B
++    }
++    
++    in.r.valid := r_valid
++    in.r.bits.data := r_data
++    in.r.bits.id := r_id
++    in.r.bits.resp := 0.U
++    in.r.bits.last := true.B
++  }
++}
+diff --git a/src/device/SDRAM.scala b/src/device/SDRAM.scala
+index a823c718..2d457882 100644
+--- a/src/device/SDRAM.scala
++++ b/src/device/SDRAM.scala
+@@ -19,8 +19,8 @@ class SDRAMIO extends Bundle {
+   val we  = Output(Bool())
+   val a   = Output(UInt(13.W))
+   val ba  = Output(UInt(2.W))
+-  val dqm = Output(UInt(2.W))
+-  val dq  = Analog(16.W)
++  val dqm = Output(UInt(4.W))
++  val dq  = Analog(32.W)
+ }
+ 
+ class sdram_top_axi extends BlackBox {
+@@ -41,7 +41,12 @@ class sdram_top_apb extends BlackBox {
+   })
+ }
+ 
+-class sdram extends BlackBox {
++// class sdram extends BlackBox {
++//   val io = IO(Flipped(new SDRAMIO))
++// }
++
++// 32-bit wrapper: 2 × 16-bit MT48LC16M16A2 chips in parallel
++class sdram_32 extends BlackBox {
+   val io = IO(Flipped(new SDRAMIO))
+ }
+ 
+-- 
+2.34.1
+

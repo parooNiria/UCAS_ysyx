@@ -10,7 +10,7 @@
 !README.md
 !.gitignore
 !init.sh
-!/patch/*
+!/patch/*/*
 nvboard/
 am-kernels/
 /am-kernels
