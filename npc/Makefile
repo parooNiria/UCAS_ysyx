@@ -43,6 +43,7 @@ endif
 BUILD_DIR = $(abspath ./build)
 OBJ_DIR   = $(BUILD_DIR)/obj_dir
 BIN       = $(BUILD_DIR)/$(TOPNAME)
+SOC_HOME  ?= $(abspath ../ysyxSoC)
 PERIP_DIR   := $(SOC_HOME)/perip
 
 VSRCS =  $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
@@ -53,16 +54,15 @@ VSRCS += $$(find $(PERIP_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 NVBOARD_INCFLAGS = $(addprefix -I, $(INC_PATH))
 
 VERILATOR_FLAGS = \
-  --cc --exe --build -j 0 --trace-fst \
+  --cc --exe --build -j --trace-fst \
   --top-module $(TOPNAME) \
   -Mdir $(OBJ_DIR) \
   -I$(PERIP_DIR)/uart16550/rtl \
   -I$(PERIP_DIR)/spi/rtl \
   -I$(BUILD_DIR) \
   --timescale "1ns/1ns" \
-  --no-timing \
   -CFLAGS "-std=c++17 -O3 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
-  -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)" 
+  -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
 all: $(BIN)
 
 # NVBoard constraint → auto_bind.cpp
@@ -144,7 +144,6 @@ LINT_FLAGS = \
   -I$(PERIP_DIR)/spi/rtl \
   -I$(BUILD_DIR) \
   --timescale "1ns/1ns" \
-  --no-timing
 
 lint: $(BUILD_DIR)/.verilog_stamp
 	$(VERILATOR) $(LINT_FLAGS) $(VSRCS) > warning.txt 2>&1
