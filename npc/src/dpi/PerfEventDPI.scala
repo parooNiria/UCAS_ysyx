@@ -40,6 +40,11 @@ class PerfEventDPI extends ExtModule {
     val icache_access     = Input(Bool())
     val icache_hit        = Input(Bool())
     val icache_miss_cycle = Input(Bool())
+
+    // BTB events
+    val btb_lookup      = Input(Bool())
+    val btb_hit         = Input(Bool())
+    val btb_mispredict  = Input(Bool())
   })
 
   setInline("PerfEventDPI.v",
@@ -62,7 +67,10 @@ class PerfEventDPI extends ExtModule {
     |    input         wbu_commit,
     |    input         icache_access,
     |    input         icache_hit,
-    |    input         icache_miss_cycle
+    |    input         icache_miss_cycle,
+    |    input         btb_lookup,
+    |    input         btb_hit,
+    |    input         btb_mispredict
     |);
     |
     |  import "DPI-C" function void dpi_perf_event(
@@ -82,7 +90,10 @@ class PerfEventDPI extends ExtModule {
     |    input int  wbu_commit,
     |    input int  icache_access,
     |    input int  icache_hit,
-    |    input int  icache_miss_cycle
+    |    input int  icache_miss_cycle,
+    |    input int  btb_lookup,
+    |    input int  btb_hit,
+    |    input int  btb_mispredict
     |  );
     |
     |  always @(posedge clk) begin
@@ -103,7 +114,10 @@ class PerfEventDPI extends ExtModule {
     |      {31'd0, wbu_commit},
     |      {31'd0, icache_access},
     |      {31'd0, icache_hit},
-    |      {31'd0, icache_miss_cycle}
+    |      {31'd0, icache_miss_cycle},
+    |      {31'd0, btb_lookup},
+    |      {31'd0, btb_hit},
+    |      {31'd0, btb_mispredict}
     |    );
     |  end
     |

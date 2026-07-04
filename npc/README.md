@@ -1,3 +1,14 @@
+
+该目录如下:
+src:scala代码
+src_normal:scala代码去掉dpi相关部分，用于时序分析
+branchsim:分支模拟器
+cachesim:dcache模拟器
+icache_sim:icache模拟器
+soc_csrc:soc的csrc文件
+soc_minimal:最小化的仿真文件，用于加速仿真
+通过在编译时选择使用哪一套可以用NODPI=1 或 0
+
 Chisel Project Template
 =======================
 
@@ -29,3 +40,4 @@ To generate Verilog:
 ```bash
 make verilog
 ```
+

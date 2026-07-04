@@ -3,15 +3,9 @@ package npc
 import chisel3._
 import chisel3.util._
 
-class ICachePerf extends Bundle {
-  val access     = Output(Bool())   // cache 访问（lookup 有效）
-  val hit        = Output(Bool())   // cache 命中（sLookup && cache_hit）
-  val miss_cycle = Output(Bool())   // miss 处理中（sReplace || sRefill）
-}
-
 class ICache(
-  val nWays: Int     = 2,
-  val nSets: Int     = 16,
+  val nWays: Int     = 1,
+  val nSets: Int     = 4,
   val blockSize: Int = 16  //字节数
 ) extends Module {
 
@@ -29,7 +23,6 @@ class ICache(
   val io = IO(new Bundle {
     val if_req = Flipped(new if_sram)
     val axi    = new AXI4Bundle
-    val perf   = new ICachePerf
     val fencei_req = Input(Bool())
   })
 
@@ -170,9 +163,4 @@ class ICache(
   // data_ok: 数据有效的握手信号
   io.if_req.data_ok := (state === sLookup && cache_hit) || refill_done
   io.if_req.rdata := Mux(refill_done, refill_word, hit_word)
-
-  // ── Performance event pulses (DPI-C) ──
-  io.perf.access     := lookup
-  io.perf.hit        := state === sLookup && cache_hit
-  io.perf.miss_cycle := state === sReplace || state === sRefill
 }

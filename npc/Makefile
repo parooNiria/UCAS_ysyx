@@ -14,6 +14,24 @@ IMG       ?= $(NEMU_HOME)/../am-kernels/tests/cpu-tests/build/$(IMG_FILE_NAME).b
 MAX_CYCLES ?= 1000000
 REF ?= spike
 
+# ── Build mode switch ──
+#   make NODPI=1  →  uses src_normal/ + soc_minimal/  (no DPI, for synthesis)
+#   default       →  uses src/ + soc_csrc/            (full DPI, for simulation)
+NODPI ?= 0
+
+ifeq ($(NODPI),1)
+  SCALA_DIR  := src_normal
+  CSRC_DIR   := soc_minimal
+  RUN_FLAGS  := --no-limit
+else
+  SCALA_DIR  := src
+  CSRC_DIR   := soc_csrc
+  RUN_FLAGS  := --no-limit --no-diff --no-wave --no-board
+endif
+
+SCALA_SRCS := $(shell find $(abspath ./$(SCALA_DIR)) -name "*.scala" 2>/dev/null) $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
+CSRCS      := $(wildcard $(CSRC_DIR)/*.cpp )
+
 ifeq ($(REF), spike)
 REF_SO_FILE ?= $(NEMU_HOME)/tools/spike-diff/build/riscv32-spike-so
 else ifeq ($(REF), nemu)
@@ -26,11 +44,6 @@ BUILD_DIR = $(abspath ./build)
 OBJ_DIR   = $(BUILD_DIR)/obj_dir
 BIN       = $(BUILD_DIR)/$(TOPNAME)
 PERIP_DIR   := $(SOC_HOME)/perip
-# 包含 C++ 仿真文件
-CSRCS = $(wildcard soc_minimal/*.cpp )
-# CSRCS = $(wildcard soc_csrc/*.cpp )
-# 包含 Scala 源码和构建脚本，用于判断是否需要重新生成 Verilog
-SCALA_SRCS = $(shell find $(abspath ./src) -name "*.scala" 2>/dev/null) $(wildcard build.sc build.mill)
 
 VSRCS =  $$(find $(BUILD_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 VSRCS += $(SOC_HOME)/build/ysyxSoCFull.v
@@ -50,7 +63,6 @@ VERILATOR_FLAGS = \
   --no-timing \
   -CFLAGS "-std=c++17 -O3 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
   -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)" 
-RUN_FLAGS = --no-limit  
 all: $(BIN)
 
 # NVBoard constraint → auto_bind.cpp
@@ -64,7 +76,22 @@ test:
 $(BUILD_DIR)/.verilog_stamp: $(SCALA_SRCS)
 	$(call git_commit, "generate verilog")
 	mkdir -p $(BUILD_DIR)
-	COURSIER_REPOSITORIES="ivy2Local|https://maven.aliyun.com/repository/public" mill -i runMain Elaborate --target-dir $(BUILD_DIR)
+	@if [ "$(NODPI)" = "1" ]; then \
+	  echo "=== NODPI mode: swapping sources ==="; \
+	  mv src/cpu.scala src/cpu_dpi.bak; \
+	  mv src/Top.scala src/Top_dpi.bak; \
+	  mv src/Elaborate.scala src/Elaborate_dpi.bak; \
+	  cp src_normal/cpu.scala src/cpu.scala; \
+	  cp src_normal/Top.scala src/Top.scala; \
+	  cp src_normal/Elaborate.scala src/Elaborate.scala; \
+	  COURSIER_REPOSITORIES="ivy2Local|https://maven.aliyun.com/repository/public" mill -i runMain Elaborate --target-dir $(BUILD_DIR) || true; \
+	  echo "=== Restoring original sources ==="; \
+	  mv src/cpu_dpi.bak src/cpu.scala; \
+	  mv src/Top_dpi.bak src/Top.scala; \
+	  mv src/Elaborate_dpi.bak src/Elaborate.scala; \
+	else \
+	  COURSIER_REPOSITORIES="ivy2Local|https://maven.aliyun.com/repository/public" mill -i runMain Elaborate --target-dir $(BUILD_DIR); \
+	fi
 	@touch $(BUILD_DIR)/.verilog_stamp
 
 verilog: $(BUILD_DIR)/.verilog_stamp
@@ -125,6 +152,59 @@ lint: $(BUILD_DIR)/.verilog_stamp
 clean:
 	-rm -rf $(BUILD_DIR) wave.fst
 
-.PHONY: all test verilog run sim help reformat checkformat bsp idea lint clean
+CACHESIM_DIR = cachesim
+CACHESIM     = $(CACHESIM_DIR)/src/dcachesim
+DTRACE       = build/npc-log-dtrace.txt
+
+$(CACHESIM): $(CACHESIM_DIR)/src/dcachesim.c
+	gcc -O2 -o $@ $<
+
+cachesim: $(CACHESIM)
+	@if [ ! -f "$(DTRACE)" ]; then \
+		echo "ERROR: dtrace file not found: $(DTRACE)"; \
+		echo "Run simulation first: make run IMG=<binary>"; \
+		exit 1; \
+	fi
+	$< $(DTRACE) $(ARGS)
+
+dse: $(CACHESIM)
+	@if [ ! -f "$(DTRACE)" ]; then \
+		echo "ERROR: dtrace file not found: $(DTRACE)"; \
+		echo "Run simulation first: make run IMG=<binary>"; \
+		exit 1; \
+	fi
+	$(CACHESIM_DIR)/dse.sh $(DTRACE) $(POLICY)
+
+dse-wb: $(CACHESIM)
+	@if [ ! -f "$(DTRACE)" ]; then \
+		echo "ERROR: dtrace file not found: $(DTRACE)"; \
+		echo "Run simulation first: make run IMG=<binary>"; \
+		exit 1; \
+	fi
+	$(CACHESIM_DIR)/dse.sh $(DTRACE) 1
+
+BRANCHSIM_DIR = branchsim
+BRANCHSIM     = $(BRANCHSIM_DIR)/src/branchsim
+ITRACE        = build/npc-log-itrace.txt
+
+$(BRANCHSIM): $(BRANCHSIM_DIR)/src/branchsim.c
+	gcc -O2 -o $@ $< -lm
+
+branchsim: $(BRANCHSIM)
+	@if [ ! -f "$(ITRACE)" ]; then \
+		echo "ERROR: itrace file not found: $(ITRACE)"; \
+		echo "Run simulation first: make run IMG=<binary>"; \
+		exit 1; \
+	fi
+	$< $(ITRACE)
+
+branchsim-json: $(BRANCHSIM)
+	@if [ ! -f "$(ITRACE)" ]; then \
+		echo "ERROR: itrace file not found: $(ITRACE)"; \
+		exit 1; \
+	fi
+	$< $(ITRACE) --json
+
+.PHONY: all test verilog run sim help reformat checkformat bsp idea lint clean cachesim dse dse-wb branchsim branchsim-json
 
 -include ../Makefile

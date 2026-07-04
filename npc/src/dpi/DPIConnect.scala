@@ -61,6 +61,19 @@ class DPIConnect extends Module {
     val icache_access     = Input(Bool())
     val icache_hit        = Input(Bool())
     val icache_miss_cycle = Input(Bool())
+
+    // ── PerfEventDPI: BTB ──
+    val btb_lookup      = Input(Bool())
+    val btb_hit         = Input(Bool())
+    val btb_mispredict  = Input(Bool())
+
+    // ── DtraceDPI: Data Trace ──
+    val dtrace_load_valid  = Input(Bool())
+    val dtrace_store_valid = Input(Bool())
+    val dtrace_addr        = Input(UInt(32.W))
+    val dtrace_mem_size    = Input(UInt(3.W))
+    val dtrace_wdata       = Input(UInt(32.W))
+    val dtrace_wstrb       = Input(UInt(4.W))
   })
 
   // =========================================================================
@@ -115,6 +128,20 @@ class DPIConnect extends Module {
   perf_dpi.io.icache_access     := io.icache_access
   perf_dpi.io.icache_hit        := io.icache_hit
   perf_dpi.io.icache_miss_cycle := io.icache_miss_cycle
+
+  perf_dpi.io.btb_lookup      := io.btb_lookup
+  perf_dpi.io.btb_hit         := io.btb_hit
+  perf_dpi.io.btb_mispredict  := io.btb_mispredict
+
+  // ── DtraceDPI ──
+  val dtrace_dpi = Module(new DtraceDPI)
+  dtrace_dpi.io.clk         := clock
+  dtrace_dpi.io.load_valid  := io.dtrace_load_valid
+  dtrace_dpi.io.store_valid := io.dtrace_store_valid
+  dtrace_dpi.io.addr        := io.dtrace_addr
+  dtrace_dpi.io.mem_size    := io.dtrace_mem_size
+  dtrace_dpi.io.wdata       := io.dtrace_wdata
+  dtrace_dpi.io.wstrb       := io.dtrace_wstrb
 
   // =========================================================================
   //  END OF DPI BLOCK

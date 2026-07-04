@@ -105,15 +105,18 @@ void cache_report(const ChampCache *c) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, " %s <trace_file> [nways=%d] [nsets=%d] [blocksize=%d] [hit_lat=%d] [miss_pen=%d]\n",
-                argv[0], 2, 256, 16, 2, 50);
+        fprintf(stderr, " %s <trace_file> [nways=%d] [nsets=%d] [blocksize=%d] [hit_lat=%d] [miss_pen=%d]\n"
+                "  RTL 2KB default: 1-way 64-set 32B\n"
+                "  RTL 1KB:         1-way 32-set 32B\n"
+                "  RTL 512B:        1-way 16-set 32B\n",
+                argv[0], 1, 64, 32, 2, 50);
         return 1;
     }
 
     const char *fname    = argv[1];
-    int nways     = argc > 2 ? atoi(argv[2]) : 2;
-    int nsets     = argc > 3 ? atoi(argv[3]) : 256;
-    int blk       = argc > 4 ? atoi(argv[4]) : 16;
+    int nways     = argc > 2 ? atoi(argv[2]) : 1;
+    int nsets     = argc > 3 ? atoi(argv[3]) : 64;
+    int blk       = argc > 4 ? atoi(argv[4]) : 32;
     int hit_lat   = argc > 5 ? atoi(argv[5]) : 2;
     int miss_pen  = argc > 6 ? atoi(argv[6]) : 50;
 

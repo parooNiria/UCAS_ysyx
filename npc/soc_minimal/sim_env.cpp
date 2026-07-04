@@ -39,15 +39,23 @@ bool SimEnv::init(int argc, char** argv) {
 
   const struct option long_options[] = {
     {"no-limit",  no_argument, NULL, 'l'},
+    {"no-diff",   no_argument, NULL, 'd'},
+    {"no-wave",   no_argument, NULL, 'w'},
+    {"no-board",  no_argument, NULL, 'b'},
     {"help",      no_argument, NULL, 'h'},
     {0, 0, 0, 0}
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "-lh", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "-lhdwb", long_options, NULL)) != -1) {
     switch (opt) {
       case 'l':
         no_limit = true;
+        break;
+      case 'd':
+      case 'w':
+      case 'b':
+        // ignored — compatible with soc_csrc flags
         break;
       case 1:  // non-option arg → image path
         img_path = optarg;
@@ -58,6 +66,7 @@ bool SimEnv::init(int argc, char** argv) {
         printf("Usage: %s [IMAGE] [--no-limit]\n", argv[0]);
         printf("  IMAGE        Binary image to load into flash\n");
         printf("  --no-limit   Disable max cycle limit\n");
+        printf("  --no-diff, --no-wave, --no-board   (ignored)\n");
         printf("  -h           Display this help\n");
         return false;
     }

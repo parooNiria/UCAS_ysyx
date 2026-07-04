@@ -36,6 +36,7 @@ SimEnv::SimEnv()
   difftest_ = new DiffTest();
   set_sim_env_instance(this);
   set_diff_test_instance(difftest_);
+  dtrace_set_sim_env(this);
 }
 
 SimEnv::~SimEnv() {
@@ -201,6 +202,7 @@ int SimEnv::run() {
 void SimEnv::cleanup() {
   // Close trace systems
   mtrace_close();
+  dtrace_close();
   close_trace();
 
   if (tfp_) {

@@ -44,6 +44,11 @@ static uint64_t cnt_icache_access     = 0;
 static uint64_t cnt_icache_hit        = 0;
 static uint64_t cnt_icache_miss_cycles = 0;
 
+// ── BTB counters ──
+static uint64_t cnt_btb_lookup      = 0;
+static uint64_t cnt_btb_hit         = 0;
+static uint64_t cnt_btb_mispredict  = 0;
+
 // ── Per-category cycle tracking ──
 #define CAT_QUEUE_DEPTH 16
 static uint64_t cat_queue_cycle[CAT_QUEUE_DEPTH] = {0};
@@ -152,6 +157,26 @@ void perf_print_report() {
     printf("  Miss penalty:       %6.2f cycles\n", icache_miss_penalty);
     printf("  AMAT:               %6.2f cycles\n", icache_amat);
 
+    // ── BTB (Branch Target Buffer) ──
+    printf("\033[36m--- BTB (Branch Target Buffer) ---\033[0m\n");
+    printf("  BTB lookups:       %llu\n", (unsigned long long)cnt_btb_lookup);
+    printf("  BTB hits:          %llu\n", (unsigned long long)cnt_btb_hit);
+    printf("  BTB mispredicts:   %llu\n", (unsigned long long)cnt_btb_mispredict);
+    if (cnt_btb_lookup > 0) {
+        double btb_hit_rate = (double)cnt_btb_hit / cnt_btb_lookup * 100.0;
+        printf("  BTB hit rate:      %5.1f%%\n", btb_hit_rate);
+    }
+    if (cnt_btb_hit > 0) {
+        uint64_t btb_correct = cnt_btb_hit - cnt_btb_mispredict;
+        double btb_accuracy = (double)btb_correct / cnt_btb_hit * 100.0;
+        printf("  BTB correct:       %llu\n", (unsigned long long)btb_correct);
+        printf("  BTB accuracy:      %5.1f%%\n", btb_accuracy);
+    }
+    if (cnt_idu_branch > 0) {
+        double btb_coverage = (double)cnt_btb_hit / cnt_idu_branch * 100.0;
+        printf("  BTB coverage:      %5.1f%%  (hits / total branches)\n", btb_coverage);
+    }
+
     // ── LSU latency ──
     printf("\033[36m--- LSU Memory Access Latency ---\033[0m\n");
     if (cnt_lsu_load_done > 0) {
@@ -189,7 +214,10 @@ extern "C" void dpi_perf_event(
     int wbu_commit,
     int icache_access,
     int icache_hit,
-    int icache_miss_cycle)
+    int icache_miss_cycle,
+    int btb_lookup,
+    int btb_hit,
+    int btb_mispredict)
 {
     perf_cycle++;
 
@@ -200,6 +228,11 @@ extern "C" void dpi_perf_event(
     if (icache_access)     cnt_icache_access++;
     if (icache_hit)        cnt_icache_hit++;
     if (icache_miss_cycle) cnt_icache_miss_cycles++;
+
+    // ── BTB events ──
+    if (btb_lookup)     cnt_btb_lookup++;
+    if (btb_hit)        cnt_btb_hit++;
+    if (btb_mispredict) cnt_btb_mispredict++;
 
     // ── IDU decode: instruction categories ──
     bool idu_fire = false;

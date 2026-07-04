@@ -31,6 +31,10 @@ void set_diff_test_instance(DiffTest* diff_test);
 
 // Memory trace (mtrace) — close log file on shutdown
 void mtrace_close();
+
+// Data trace (dtrace) — for offline cache simulation
+void dtrace_close();
+void dtrace_set_sim_env(SimEnv* env);
   
 // DPI callback declarations (extern "C" for Verilator)
 extern "C" {

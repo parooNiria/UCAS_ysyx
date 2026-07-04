@@ -12,6 +12,7 @@
 !.scalafmt.conf
 !README.md
 build/
+build_nodpi/
 
 # mill
 !*.mill

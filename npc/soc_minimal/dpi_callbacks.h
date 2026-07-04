@@ -44,7 +44,13 @@ extern "C" {
                       int idu_store, int idu_csr, int idu_system,
                       int exu_compute, int exu_load_issue, int exu_store_issue,
                       int lsu_load_done, int lsu_store_done, int wbu_commit,
-                      int icache_access, int icache_hit, int icache_miss_cycle);
+                      int icache_access, int icache_hit, int icache_miss_cycle,
+                      int btb_lookup, int btb_hit, int btb_mispredict);
+
+  // Data trace (dtrace) — logs data memory accesses for cache simulation
+  void dpi_dtrace_event(int load_valid, int store_valid,
+                        int addr, int mem_size,
+                        int wdata, int wstrb);
 }
 
 #endif

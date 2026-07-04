@@ -17,6 +17,7 @@ class cpu extends Module {
   val wbu = Module(new WBU)
   val rf = Module(new RegisterFile)
   val icache = Module(new ICache)  // I-Cache between IFU and AXI
+  val btb = Module(new BTB)        // Branch Target Buffer
 
   idu.io.in <> ifu.io.out
   exu.io.in <> idu.io.out
@@ -39,6 +40,19 @@ class cpu extends Module {
   ifu.io.flush_valid := idu.io.flush_valid_out || wbu.io.out.flush_valid || exu.io.exp_status || memu.io.exp_status
   ifu.io.flush_pc     := Mux(wbu.io.out.flush_valid, wbu.io.out.flush_pc, idu.io.flush_re_pc)
   idu.io.flush_valid_in := wbu.io.out.flush_valid || exu.io.exp_status || memu.io.exp_status
+
+  // ── BTB (Branch Target Buffer) ──
+  // Lookup: 用当前取指 PC 查 BTB
+  btb.io.lookup_pc := ifu.io.if_sram.addr
+  // 结果送给 IFU
+  ifu.io.btb_hit    := btb.io.hit
+  ifu.io.btb_target := btb.io.pred_target
+
+  // Update: IDU 决定是否写入 (实际跳转的分支才写)
+  btb.io.update_valid  := idu.io.btb_update
+  btb.io.update_pc     := idu.io.out.bits.pc
+  btb.io.update_target := idu.io.flush_re_pc
+  btb.io.update_taken  := true.B
 
   // ── Data forwarding ──
   idu.io.reg_forward_exe <> exu.io.reg_forward
@@ -164,6 +178,20 @@ class cpu extends Module {
   dpi.io.icache_access     := icache.io.perf.access
   dpi.io.icache_hit        := icache.io.perf.hit
   dpi.io.icache_miss_cycle := icache.io.perf.miss_cycle
+
+  // PerfEventDPI: BTB
+  val ifu_fetching = ifu.io.if_sram.req_valid && ifu.io.if_sram.addr_ok
+  dpi.io.btb_lookup     := ifu_fetching
+  dpi.io.btb_hit        := ifu_fetching && btb.io.hit
+  dpi.io.btb_mispredict := idu.io.btb_mispredict
+
+  // DtraceDPI: Data trace for offline cache simulation
+  dpi.io.dtrace_load_valid  := exu.io.perf_load_issue
+  dpi.io.dtrace_store_valid := exu.io.perf_store_issue
+  dpi.io.dtrace_addr        := exu.io.out.bits.alu_result
+  dpi.io.dtrace_mem_size    := exu.io.out.bits.mem_en_LS_Type(2, 0)
+  dpi.io.dtrace_wdata       := exu.io.wdata
+  dpi.io.dtrace_wstrb       := exu.io.wstrb
   // =========================================================================
   // END OF DPI BLOCK
   // =========================================================================

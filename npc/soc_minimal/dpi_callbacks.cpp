@@ -138,11 +138,23 @@ extern "C" void dpi_perf_event(
     int idu_csr, int idu_system,
     int exu_compute, int exu_load_issue, int exu_store_issue,
     int lsu_load_done, int lsu_store_done, int wbu_commit,
-    int icache_access, int icache_hit, int icache_miss_cycle) {
+    int icache_access, int icache_hit, int icache_miss_cycle,
+    int btb_lookup, int btb_hit, int btb_mispredict) {
   (void)ifu_fetch;
   (void)idu_compute; (void)idu_branch; (void)idu_jump; (void)idu_load; (void)idu_store;
   (void)idu_csr; (void)idu_system;
   (void)exu_compute; (void)exu_load_issue; (void)exu_store_issue;
   (void)lsu_load_done; (void)lsu_store_done; (void)wbu_commit;
   (void)icache_access; (void)icache_hit; (void)icache_miss_cycle;
+  (void)btb_lookup; (void)btb_hit; (void)btb_mispredict;
+}
+
+// ── Data trace (dtrace) — stub ────────────────────────────────────────────────
+
+extern "C" void dpi_dtrace_event(int load_valid, int store_valid,
+                                  int addr, int mem_size,
+                                  int wdata, int wstrb) {
+  (void)load_valid; (void)store_valid;
+  (void)addr; (void)mem_size;
+  (void)wdata; (void)wstrb;
 }
