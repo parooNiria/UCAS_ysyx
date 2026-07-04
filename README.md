@@ -1,9 +1,3 @@
-# "一生一芯"工程项目
+# 马振鑫的课程仓库
 
-这是"一生一芯"的工程项目. 通过运行
-```bash
-bash init.sh subproject-name
-```
-进行初始化, 具体请参考[实验讲义][lecture note].
-
-[lecture note]: https://ysyx.oscc.cc/docs/
+本仓库存在在gkd y-s-y-x 课程上的课业代码
