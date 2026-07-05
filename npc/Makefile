@@ -60,6 +60,7 @@ VERILATOR_FLAGS = \
   -I$(PERIP_DIR)/uart16550/rtl \
   -I$(PERIP_DIR)/spi/rtl \
   -I$(BUILD_DIR) \
+  --no-timing \
   --timescale "1ns/1ns" \
   -CFLAGS "-std=c++17 -O3 $(NVBOARD_INCFLAGS) $(CXXFLAGS)" \
   -LDFLAGS "-lcapstone -ldl $(NVBOARD_ARCHIVE) $(LDFLAGS)"
@@ -122,6 +123,37 @@ sim_file: $(BUILD_DIR)/.verilog_stamp $(CSRCS) $(NVBOARD_ARCHIVE)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
 	@rm -f $(BIN)
 	@cp $(OBJ_DIR)/V$(TOPNAME) $(BIN)
+
+# ── iverilog simulation (CI requirement) ──
+IVERILOG ?= iverilog
+VVP      ?= vvp
+STUID    ?= ysyx_26060177
+SIM_DIR  = $(abspath ./sim)
+
+sim-iverilog: $(BUILD_DIR)/.verilog_stamp
+	@if [ -z "$(IMG)" ]; then echo "Usage: make sim-iverilog IMG=path/to/image.bin"; exit 1; fi
+	@# trampoline: lui x3,0x80000; jalr x0,x3,0
+	@python3 -c "import sys; sys.stdout.buffer.write(b'\xb7\x01\x00\x80\x67\x80\x01\x00')" > $(BUILD_DIR)/trampoline.bin
+	@objcopy -I binary -O verilog --adjust-vma=0 $(BUILD_DIR)/trampoline.bin $(BUILD_DIR)/boot.hex
+	@objcopy -I binary -O verilog --adjust-vma=0 $(IMG) $(BUILD_DIR)/prog.hex
+	$(IVERILOG) -o $(BUILD_DIR)/sim.vvp -I$(BUILD_DIR) -I$(SIM_DIR) -g2012 \
+	  -DBOOT_HEX=\"$(BUILD_DIR)/boot.hex\" -DPROG_HEX=\"$(BUILD_DIR)/prog.hex\" \
+	  $(BUILD_DIR)/*.sv $(SIM_DIR)/*.v
+	$(VVP) $(BUILD_DIR)/sim.vvp
+
+sim-iverilog-netlist:
+	@if [ -z "$(IMG)" ] || [ -z "$(NETLIST)" ] || [ -z "$(CELLS)" ]; then \
+		echo "Usage: make sim-iverilog-netlist IMG=xxx NETLIST=yyy CELLS=zzz"; exit 1; fi
+	@python3 -c "import sys; sys.stdout.buffer.write(b'\xb7\x01\x00\x80\x67\x80\x01\x00')" > $(BUILD_DIR)/trampoline.bin
+	@objcopy -I binary -O verilog --adjust-vma=0 $(BUILD_DIR)/trampoline.bin $(BUILD_DIR)/boot.hex
+	@objcopy -I binary -O verilog --adjust-vma=0 $(IMG) $(BUILD_DIR)/prog.hex
+	@python3 $(SIM_DIR)/netlist_wrap.py $(NETLIST) > $(BUILD_DIR)/netlist_wrap.v
+	$(IVERILOG) -o $(BUILD_DIR)/sim_netlist.vvp -I$(BUILD_DIR) -I$(SIM_DIR) -g2012 \
+	  -DBOOT_HEX=\"$(BUILD_DIR)/boot.hex\" -DPROG_HEX=\"$(BUILD_DIR)/prog.hex\" \
+	  $(NETLIST) $(CELLS) $(BUILD_DIR)/netlist_wrap.v \
+	  $(SIM_DIR)/axi_mem.v $(SIM_DIR)/tb_netlist.v
+	$(VVP) $(BUILD_DIR)/sim_netlist.vvp
+
 help:
 	mill -i runMain Elaborate --help
 
@@ -204,6 +236,6 @@ branchsim-json: $(BRANCHSIM)
 	fi
 	$< $(ITRACE) --json
 
-.PHONY: all test verilog run sim help reformat checkformat bsp idea lint clean cachesim dse dse-wb branchsim branchsim-json
+.PHONY: all test verilog run sim sim-iverilog sim-iverilog-netlist help reformat checkformat bsp idea lint clean cachesim dse dse-wb branchsim branchsim-json
 
 -include ../Makefile
